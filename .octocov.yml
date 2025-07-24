@@ -1,0 +1,16 @@
+coverage:
+  badge:
+    path: docs/coverage.svg
+push:
+
+comment:
+  enable: true
+
+# report:
+#   if: is_pull_request
+#   datastores:
+#     - artifact://
+
+# diff:
+#   datastores:
+#     - artifact://
