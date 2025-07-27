@@ -25,8 +25,8 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 			},
 			contextLines: -1,
 			want: []string{
-				"-  name: John",
-				"+  name: Jane",
+				"- name: John",
+				"+ name: Jane",
 			},
 		},
 		{
@@ -40,7 +40,7 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 			},
 			contextLines: -1,
 			want: []string{
-				"+  age: 30",
+				"+ age: 30",
 			},
 		},
 		{
@@ -54,7 +54,7 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 			},
 			contextLines: -1,
 			want: []string{
-				"-  city: Tokyo",
+				"- city: Tokyo",
 			},
 		},
 		{
@@ -70,7 +70,7 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 			showOnlyDiff: false,
 			contextLines: -1,
 			want: []string{
-				"   id: 123",
+				"  id: 123",
 			},
 		},
 		{
@@ -117,8 +117,8 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 			},
 			contextLines: -1,
 			want: []string{
-				"-  user: john",
-				"+  user: jane",
+				"- user: john",
+				"+ user: jane",
 			},
 		},
 		{
@@ -138,10 +138,10 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 			},
 			contextLines: -1,
 			want: []string{
-				"-  a: old",
-				"+  a: new",
+				"- a: old",
+				"+ a: new",
 				"---",
-				"+  b: added",
+				"+ b: added",
 			},
 		},
 		{
@@ -183,8 +183,9 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 			showOnlyDiff: true,
 			contextLines: -1,
 			want: []string{
-				"-  items.[1]: b",
-				"+  items.[1]: c",
+				"items:",
+				"-   - b",
+				"+   - c",
 			},
 		},
 		{
@@ -235,10 +236,10 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 			showOnlyDiff: true,
 			contextLines: 1,
 			want: []string{
-				"   field2: value2",
-				"-  field3: old",
-				"+  field3: new",
-				"   field4: value4",
+				"  field2: value2",
+				"- field3: old",
+				"+ field3: new",
+				"  field4: value4",
 			},
 		},
 	}

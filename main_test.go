@@ -59,7 +59,7 @@ func TestCLI(t *testing.T) {
 			name:     "Different files",
 			args:     []string{json1, json2},
 			wantExit: 1,
-			wantOut:  "-  name: test",
+			wantOut:  "- name: test",
 		},
 		{
 			name:     "Same content different format",
@@ -77,13 +77,13 @@ func TestCLI(t *testing.T) {
 			name:     "Show all flag",
 			args:     []string{"-show-all", json1, json2},
 			wantExit: 1,
-			wantOut:  "   enabled: true",
+			wantOut:  "  enabled: true",
 		},
 		{
 			name:     "Verbose flag",
 			args:     []string{"-v", json1, json2},
 			wantExit: 1,
-			wantOut:  "-  name: test",
+			wantOut:  "- name: test",
 		},
 		{
 			name:     "Force formats",

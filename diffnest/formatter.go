@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// Constants.
 const (
 	valueNull = "null"
 )
@@ -25,14 +24,20 @@ type UnifiedFormatter struct {
 
 // Format formats diff results.
 func (f *UnifiedFormatter) Format(w io.Writer, results []*DiffResult) error {
-	for i, result := range results {
-		if i > 0 {
+	needsSeparator := false
+
+	for _, result := range results {
+		hasContent := f.hasContentToDisplay(result)
+		if !hasContent {
+			continue
+		}
+
+		if needsSeparator {
 			if _, err := fmt.Fprint(w, "---\n"); err != nil {
 				return fmt.Errorf("write separator: %w", err)
 			}
 		}
-
-		// Apply context filtering at the top level if needed
+		needsSeparator = true
 		if f.ShowOnlyDiff && f.ContextLines >= 0 && len(result.Children) > 0 {
 			if err := f.formatWithContext(w, result, ""); err != nil {
 				return err
@@ -45,6 +50,30 @@ func (f *UnifiedFormatter) Format(w io.Writer, results []*DiffResult) error {
 	}
 
 	return nil
+}
+
+// hasContentToDisplay checks if a diff result has content to display.
+func (f *UnifiedFormatter) hasContentToDisplay(diff *DiffResult) bool {
+	if !f.ShowOnlyDiff {
+		return true
+	}
+
+	return f.hasDifferences(diff)
+}
+
+// hasDifferences checks if a diff result contains any differences.
+func (f *UnifiedFormatter) hasDifferences(diff *DiffResult) bool {
+	if diff.Status != StatusSame {
+		return true
+	}
+
+	for _, child := range diff.Children {
+		if f.hasDifferences(child) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // formatWithContext formats a diff result with context lines applied.
@@ -109,13 +138,37 @@ func (f *UnifiedFormatter) getPathString(path []string) string {
 
 func (f *UnifiedFormatter) formatSameDiff(w io.Writer, diff *DiffResult, indent string) error {
 	if len(diff.Children) > 0 {
+		if len(diff.Path) > 0 {
+			key := diff.Path[len(diff.Path)-1]
+			// Handle array elements specially
+			if strings.HasPrefix(key, "[") && strings.HasSuffix(key, "]") {
+				if _, err := fmt.Fprintf(w, "  %s-\n", indent); err != nil {
+					return fmt.Errorf("write array marker: %w", err)
+				}
+
+				return f.formatChildren(w, diff.Children, indent+"  ")
+			}
+			if _, err := fmt.Fprintf(w, "  %s%s:\n", indent, key); err != nil {
+				return fmt.Errorf("write object key: %w", err)
+			}
+
+			return f.formatChildren(w, diff.Children, indent+"  ")
+		}
+
 		return f.formatChildren(w, diff.Children, indent)
 	}
 
-	// Show value for primitives
-	pathStr := f.getPathString(diff.Path)
-	if _, err := fmt.Fprintf(w, "  %s%s: %s\n", indent, pathStr, f.formatValue(diff.From)); err != nil {
-		return fmt.Errorf("write same value: %w", err)
+	if len(diff.Path) > 0 {
+		key := diff.Path[len(diff.Path)-1]
+		if strings.HasPrefix(key, "[") && strings.HasSuffix(key, "]") {
+			if _, err := fmt.Fprintf(w, "  %s- %s\n", indent, f.formatValue(diff.From)); err != nil {
+				return fmt.Errorf("write array element: %w", err)
+			}
+		} else {
+			if _, err := fmt.Fprintf(w, "  %s%s: %s\n", indent, key, f.formatValue(diff.From)); err != nil {
+				return fmt.Errorf("write same value: %w", err)
+			}
+		}
 	}
 
 	return nil
@@ -130,16 +183,43 @@ func (f *UnifiedFormatter) formatModifiedDiff(w io.Writer, diff *DiffResult, ind
 		return f.formatMultilineStringDiff(w, diff, indent)
 	}
 
+	if len(diff.Path) > 0 {
+		key := diff.Path[len(diff.Path)-1]
+		if strings.HasPrefix(key, "[") && strings.HasSuffix(key, "]") {
+			if _, err := fmt.Fprintf(w, "  %s-\n", indent); err != nil {
+				return fmt.Errorf("write array marker: %w", err)
+			}
+
+			return f.formatModifiedContainer(w, diff, indent+"  ")
+		}
+		if _, err := fmt.Fprintf(w, "  %s%s:\n", indent, key); err != nil {
+			return fmt.Errorf("write object key: %w", err)
+		}
+
+		return f.formatModifiedContainer(w, diff, indent+"  ")
+	}
+
 	return f.formatModifiedContainer(w, diff, indent)
 }
 
 func (f *UnifiedFormatter) formatModifiedPrimitive(w io.Writer, diff *DiffResult, indent string) error {
-	pathStr := f.getPathString(diff.Path)
-	if _, err := fmt.Fprintf(w, "- %s%s: %s\n", indent, pathStr, f.formatValue(diff.From)); err != nil {
-		return fmt.Errorf("write deleted value: %w", err)
-	}
-	if _, err := fmt.Fprintf(w, "+ %s%s: %s\n", indent, pathStr, f.formatValue(diff.To)); err != nil {
-		return fmt.Errorf("write added value: %w", err)
+	if len(diff.Path) > 0 {
+		key := diff.Path[len(diff.Path)-1]
+		if strings.HasPrefix(key, "[") && strings.HasSuffix(key, "]") {
+			if _, err := fmt.Fprintf(w, "- %s- %s\n", indent, f.formatValue(diff.From)); err != nil {
+				return fmt.Errorf("write deleted array element: %w", err)
+			}
+			if _, err := fmt.Fprintf(w, "+ %s- %s\n", indent, f.formatValue(diff.To)); err != nil {
+				return fmt.Errorf("write added array element: %w", err)
+			}
+		} else {
+			if _, err := fmt.Fprintf(w, "- %s%s: %s\n", indent, key, f.formatValue(diff.From)); err != nil {
+				return fmt.Errorf("write deleted value: %w", err)
+			}
+			if _, err := fmt.Fprintf(w, "+ %s%s: %s\n", indent, key, f.formatValue(diff.To)); err != nil {
+				return fmt.Errorf("write added value: %w", err)
+			}
+		}
 	}
 
 	return nil
@@ -204,31 +284,61 @@ func (f *UnifiedFormatter) formatAdded(w io.Writer, diff *DiffResult, indent str
 }
 
 func (f *UnifiedFormatter) formatAddedOrDeleted(w io.Writer, data *StructuredData, path []string, indent, prefix string) error {
-	pathStr := strings.Join(path, ".")
-	if pathStr != "" {
-		pathStr = " " + pathStr
-	}
-
 	if data == nil {
-		if _, err := fmt.Fprintf(w, "%s%s%s\n", prefix, indent, pathStr); err != nil {
-			return fmt.Errorf("write path: %w", err)
-		}
-
 		return nil
 	}
 
+	if len(path) == 0 {
+		return f.formatStructure(w, data, indent, prefix)
+	}
+
+	key := path[len(path)-1]
+
+	// Handle array elements specially
+	if strings.HasPrefix(key, "[") && strings.HasSuffix(key, "]") {
+		return f.formatArrayElement(w, data, indent, prefix)
+	}
+
 	switch data.Type {
-	case TypeObject, TypeArray:
-		if _, err := fmt.Fprintf(w, "%s%s%s:\n", prefix, indent, pathStr); err != nil {
-			return fmt.Errorf("write structure header: %w", err)
-		}
-		if err := f.formatStructure(w, data, indent+"  ", prefix); err != nil {
-			return err
+	case TypeObject:
+		if _, err := fmt.Fprintf(w, "%s%s%s:\n", prefix, indent, key); err != nil {
+			return fmt.Errorf("write object key: %w", err)
 		}
 
+		return f.formatStructure(w, data, indent+"  ", prefix)
+	case TypeArray:
+		if _, err := fmt.Fprintf(w, "%s%s%s:\n", prefix, indent, key); err != nil {
+			return fmt.Errorf("write array key: %w", err)
+		}
+
+		return f.formatStructure(w, data, indent+"  ", prefix)
 	default:
-		if _, err := fmt.Fprintf(w, "%s%s%s: %s\n", prefix, indent, pathStr, f.formatValue(data)); err != nil {
+		if _, err := fmt.Fprintf(w, "%s%s%s: %s\n", prefix, indent, key, f.formatValue(data)); err != nil {
 			return fmt.Errorf("write value: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// formatArrayElement formats array elements with proper YAML list syntax.
+func (f *UnifiedFormatter) formatArrayElement(w io.Writer, data *StructuredData, indent, prefix string) error {
+	switch data.Type {
+	case TypeObject:
+		if _, err := fmt.Fprintf(w, "%s%s-\n", prefix, indent); err != nil {
+			return fmt.Errorf("write array object marker: %w", err)
+		}
+
+		return f.formatStructure(w, data, indent+"  ", prefix)
+	case TypeArray:
+		if _, err := fmt.Fprintf(w, "%s%s-\n", prefix, indent); err != nil {
+			return fmt.Errorf("write array marker: %w", err)
+		}
+
+		return f.formatStructure(w, data, indent+"  ", prefix)
+	default:
+		if _, err := fmt.Fprintf(w, "%s%s- %s\n", prefix, indent, f.formatValue(data)); err != nil {
+			return fmt.Errorf("write array element: %w", err)
 		}
 	}
 
@@ -240,9 +350,16 @@ func (f *UnifiedFormatter) formatStructure(w io.Writer, data *StructuredData, in
 	case TypeObject:
 		for key, child := range data.Children {
 			switch child.Type {
-			case TypeObject, TypeArray:
+			case TypeObject:
 				if _, err := fmt.Fprintf(w, "%s%s%s:\n", prefix, indent, key); err != nil {
 					return fmt.Errorf("write object key: %w", err)
+				}
+				if err := f.formatStructure(w, child, indent+"  ", prefix); err != nil {
+					return err
+				}
+			case TypeArray:
+				if _, err := fmt.Fprintf(w, "%s%s%s:\n", prefix, indent, key); err != nil {
+					return fmt.Errorf("write array key: %w", err)
 				}
 				if err := f.formatStructure(w, child, indent+"  ", prefix); err != nil {
 					return err
@@ -255,20 +372,31 @@ func (f *UnifiedFormatter) formatStructure(w io.Writer, data *StructuredData, in
 		}
 
 	case TypeArray:
-		for i, elem := range data.Elements {
+		for _, elem := range data.Elements {
 			switch elem.Type {
-			case TypeObject, TypeArray:
-				if _, err := fmt.Fprintf(w, "%s%s[%d]:\n", prefix, indent, i); err != nil {
-					return fmt.Errorf("write array index: %w", err)
+			case TypeObject:
+				if _, err := fmt.Fprintf(w, "%s%s-\n", prefix, indent); err != nil {
+					return fmt.Errorf("write array object marker: %w", err)
+				}
+				if err := f.formatStructure(w, elem, indent+"  ", prefix); err != nil {
+					return err
+				}
+			case TypeArray:
+				if _, err := fmt.Fprintf(w, "%s%s-\n", prefix, indent); err != nil {
+					return fmt.Errorf("write array marker: %w", err)
 				}
 				if err := f.formatStructure(w, elem, indent+"  ", prefix); err != nil {
 					return err
 				}
 			default:
-				if _, err := fmt.Fprintf(w, "%s%s[%d]: %s\n", prefix, indent, i, f.formatValue(elem)); err != nil {
+				if _, err := fmt.Fprintf(w, "%s%s- %s\n", prefix, indent, f.formatValue(elem)); err != nil {
 					return fmt.Errorf("write array element: %w", err)
 				}
 			}
+		}
+	default:
+		if _, err := fmt.Fprintf(w, "%s%s%s\n", prefix, indent, f.formatValue(data)); err != nil {
+			return fmt.Errorf("write value: %w", err)
 		}
 	}
 
@@ -283,8 +411,15 @@ func (f *UnifiedFormatter) formatValue(data *StructuredData) string {
 	switch data.Type {
 	case TypeNull:
 		return valueNull
-	case TypeBool, TypeNumber, TypeString:
+	case TypeBool, TypeNumber:
 		return fmt.Sprint(data.Value)
+	case TypeString:
+		str := fmt.Sprint(data.Value)
+		if strings.Contains(str, ":") || strings.Contains(str, " ") || str == "" {
+			return fmt.Sprintf("%q", str)
+		}
+
+		return str
 	case TypeArray:
 		if len(data.Elements) == 0 {
 			return "[]"
@@ -341,7 +476,6 @@ func (f *UnifiedFormatter) formatLineDiff(w io.Writer, diff *DiffResult, indent 
 
 // formatMultilineWithContext formats multiline string diffs with context lines.
 func (f *UnifiedFormatter) formatMultilineWithContext(w io.Writer, lines []*DiffResult, indent string) error {
-	// Find all changed line indices
 	var changedIndices []int
 	for i, line := range lines {
 		if line.Status != StatusSame {
@@ -353,29 +487,23 @@ func (f *UnifiedFormatter) formatMultilineWithContext(w io.Writer, lines []*Diff
 		return nil
 	}
 
-	// Calculate which lines to show based on context
 	showLine := make([]bool, len(lines))
 	for _, idx := range changedIndices {
-		// Always show the changed line
 		showLine[idx] = true
 
-		// Show context before
 		for i := 1; i <= f.ContextLines && idx-i >= 0; i++ {
 			showLine[idx-i] = true
 		}
 
-		// Show context after
 		for i := 1; i <= f.ContextLines && idx+i < len(lines); i++ {
 			showLine[idx+i] = true
 		}
 	}
 
-	// Format the lines
 	prevShown := false
 	for i, line := range lines {
 		if showLine[i] {
 			if !prevShown && i > 0 {
-				// Add separator for skipped lines
 				if _, err := fmt.Fprintf(w, "   %s...\n", indent); err != nil {
 					return fmt.Errorf("write separator: %w", err)
 				}
@@ -394,7 +522,6 @@ func (f *UnifiedFormatter) formatMultilineWithContext(w io.Writer, lines []*Diff
 
 // formatChildrenWithContext formats object/array children with context lines.
 func (f *UnifiedFormatter) formatChildrenWithContext(w io.Writer, children []*DiffResult, indent string) error {
-	// Find all changed child indices
 	var changedIndices []int
 	for i, child := range children {
 		if child.Status != StatusSame || f.hasChangedDescendants(child) {
@@ -406,29 +533,23 @@ func (f *UnifiedFormatter) formatChildrenWithContext(w io.Writer, children []*Di
 		return nil
 	}
 
-	// Calculate which children to show based on context
 	showChild := make([]bool, len(children))
 	for _, idx := range changedIndices {
-		// Always show the changed child
 		showChild[idx] = true
 
-		// Show context before
 		for i := 1; i <= f.ContextLines && idx-i >= 0; i++ {
 			showChild[idx-i] = true
 		}
 
-		// Show context after
 		for i := 1; i <= f.ContextLines && idx+i < len(children); i++ {
 			showChild[idx+i] = true
 		}
 	}
 
-	// Format the children
 	prevShown := false
 	for i, child := range children {
 		if showChild[i] {
 			if !prevShown && i > 0 {
-				// Add separator for skipped items
 				if _, err := fmt.Fprintf(w, "  %s...\n", indent); err != nil {
 					return fmt.Errorf("write separator: %w", err)
 				}
@@ -518,7 +639,6 @@ func (f *JSONPatchFormatter) generateOperations(diff *DiffResult) []string {
 		ops = append(ops, op)
 
 	case StatusSame:
-		// Generate ops for modified children
 		for _, child := range diff.Children {
 			if child.Status != StatusSame {
 				ops = append(ops, f.generateOperations(child)...)
