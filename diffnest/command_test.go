@@ -98,7 +98,7 @@ func TestCommand_Parse(t *testing.T) {
 			name:    "Incompatible options: show-all and context lines",
 			args:    []string{"-show-all", "-C", "3", "f1", "f2"},
 			wantErr: true,
-			check: func(t *testing.T, cmd *Command) {
+			check: func(_ *testing.T, _ *Command) {
 				// Should not reach here since parse should fail
 			},
 		},

@@ -26,6 +26,32 @@ func TestDiffEngine_Compare(t *testing.T) {
 			status: StatusSame,
 		},
 		{
+			name:   "Case-sensitive string comparison (same)",
+			a:      &StructuredData{Type: TypeString, Value: "Hello"},
+			b:      &StructuredData{Type: TypeString, Value: "Hello"},
+			status: StatusSame,
+		},
+		{
+			name:   "Case-sensitive string comparison (different)",
+			a:      &StructuredData{Type: TypeString, Value: "Hello"},
+			b:      &StructuredData{Type: TypeString, Value: "hello"},
+			status: StatusModified,
+		},
+		{
+			name:   "Case-insensitive string comparison (same)",
+			a:      &StructuredData{Type: TypeString, Value: "Hello"},
+			b:      &StructuredData{Type: TypeString, Value: "hello"},
+			opts:   DiffOptions{IgnoreValueCase: true},
+			status: StatusSame,
+		},
+		{
+			name:   "Case-insensitive string comparison (different)",
+			a:      &StructuredData{Type: TypeString, Value: "Hello"},
+			b:      &StructuredData{Type: TypeString, Value: "World"},
+			opts:   DiffOptions{IgnoreValueCase: true},
+			status: StatusModified,
+		},
+		{
 			name:   "Different string values",
 			a:      &StructuredData{Type: TypeString, Value: "hello"},
 			b:      &StructuredData{Type: TypeString, Value: "world"},
@@ -322,6 +348,74 @@ func TestDiffEngine_CompareObjects(t *testing.T) {
 			},
 			opts:   DiffOptions{IgnoreEmptyFields: false},
 			status: StatusModified,
+		},
+		{
+			name: "Case-sensitive key comparison (different)",
+			a: &StructuredData{
+				Type: TypeObject,
+				Children: map[string]*StructuredData{
+					"Name": {Type: TypeString, Value: "John"},
+				},
+			},
+			b: &StructuredData{
+				Type: TypeObject,
+				Children: map[string]*StructuredData{
+					"name": {Type: TypeString, Value: "John"},
+				},
+			},
+			opts:   DiffOptions{IgnoreKeyCase: false},
+			status: StatusModified,
+		},
+		{
+			name: "Case-insensitive key comparison (same)",
+			a: &StructuredData{
+				Type: TypeObject,
+				Children: map[string]*StructuredData{
+					"Name": {Type: TypeString, Value: "John"},
+				},
+			},
+			b: &StructuredData{
+				Type: TypeObject,
+				Children: map[string]*StructuredData{
+					"name": {Type: TypeString, Value: "John"},
+				},
+			},
+			opts:   DiffOptions{IgnoreKeyCase: true},
+			status: StatusSame,
+		},
+		{
+			name: "Case-insensitive key with different values",
+			a: &StructuredData{
+				Type: TypeObject,
+				Children: map[string]*StructuredData{
+					"Name": {Type: TypeString, Value: "John"},
+				},
+			},
+			b: &StructuredData{
+				Type: TypeObject,
+				Children: map[string]*StructuredData{
+					"name": {Type: TypeString, Value: "Jane"},
+				},
+			},
+			opts:   DiffOptions{IgnoreKeyCase: true},
+			status: StatusModified,
+		},
+		{
+			name: "Mixed case keys with case-insensitive values",
+			a: &StructuredData{
+				Type: TypeObject,
+				Children: map[string]*StructuredData{
+					"Name": {Type: TypeString, Value: "JOHN"},
+				},
+			},
+			b: &StructuredData{
+				Type: TypeObject,
+				Children: map[string]*StructuredData{
+					"name": {Type: TypeString, Value: "john"},
+				},
+			},
+			opts:   DiffOptions{IgnoreKeyCase: true, IgnoreValueCase: true},
+			status: StatusSame,
 		},
 	}
 

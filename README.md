@@ -52,6 +52,8 @@ cat file1.json | diffnest - file2.json
 -show-all              Show all fields including unchanged ones (default: show only differences)
 -ignore-zero-values    Treat zero values (0, false, "", [], {}) as null
 -ignore-empty          Ignore empty fields
+-ignore-key-case       Ignore case differences in object keys
+-ignore-value-case     Ignore case differences in string values
 -array-strategy        Array comparison strategy: 'index' or 'value' (default: value)
 -format                Output format: 'unified' or 'json-patch' (default: unified)
 -format1               Format for first file: 'json', 'yaml', or auto-detect
@@ -96,6 +98,18 @@ diffnest -C 0 file1.json file2.json
 
 # Show more context around changes
 diffnest -C 5 file1.json file2.json
+```
+
+#### Case-insensitive comparisons
+```shell
+# Ignore case differences in object keys
+diffnest --ignore-key-case config1.json config2.json
+
+# Ignore case differences in string values
+diffnest --ignore-value-case data1.json data2.json
+
+# Ignore case in both keys and values
+diffnest --ignore-key-case --ignore-value-case file1.json file2.json
 ```
 
 ## Output Examples
@@ -224,6 +238,52 @@ For large files with scattered changes, context control helps focus on what matt
 ```
 
 **Important:** The `-C` option is incompatible with `-show-all`. When using `-show-all`, all fields are displayed regardless of context settings.
+
+### Case-Insensitive Comparisons
+
+diffnest provides granular control over case sensitivity:
+
+#### Object Key Case Insensitivity
+
+```shell
+# Without --ignore-key-case (default)
+diffnest file1.json file2.json
+```
+
+```diff
+-  Name: John
++  name: John
+```
+
+```shell
+# With --ignore-key-case
+diffnest --ignore-key-case file1.json file2.json
+```
+
+```diff
+(no differences - keys "Name" and "name" are considered the same)
+```
+
+#### String Value Case Insensitivity
+
+```shell
+# Without --ignore-value-case (default)
+diffnest file1.json file2.json
+```
+
+```diff
+-  status: ACTIVE
++  status: active
+```
+
+```shell
+# With --ignore-value-case
+diffnest --ignore-value-case file1.json file2.json
+```
+
+```diff
+(no differences - values "ACTIVE" and "active" are considered the same)
+```
 
 ## Option Compatibility
 

@@ -9,7 +9,10 @@ import (
 
 const arrayStrategyIndex = "index"
 
-var ErrInvalidArgs = errors.New("expected 2 files")
+var (
+	ErrInvalidArgs         = errors.New("expected 2 files")
+	ErrIncompatibleOptions = errors.New("--show-all and -C options are incompatible: context lines are only meaningful when showing only differences")
+)
 
 // Command represents the CLI command configuration.
 type Command struct {
@@ -17,6 +20,8 @@ type Command struct {
 	ShowAll          bool
 	IgnoreZeroValues bool
 	IgnoreEmpty      bool
+	IgnoreKeyCase    bool
+	IgnoreValueCase  bool
 	ArrayStrategy    string
 	OutputFormat     string
 	Format1          string
@@ -31,7 +36,7 @@ type Command struct {
 
 	// FlagSet for parsing
 	flags *flag.FlagSet
-	
+
 	// Track if context lines was explicitly set
 	contextLinesSet bool
 }
@@ -46,6 +51,8 @@ func NewCommand(name string, errorHandling flag.ErrorHandling) *Command {
 	cmd.flags.BoolVar(&cmd.ShowAll, "show-all", false, "Show all fields including unchanged ones")
 	cmd.flags.BoolVar(&cmd.IgnoreZeroValues, "ignore-zero-values", false, "Treat zero values (0, false, \"\", [], {}) as null")
 	cmd.flags.BoolVar(&cmd.IgnoreEmpty, "ignore-empty", false, "Ignore empty fields")
+	cmd.flags.BoolVar(&cmd.IgnoreKeyCase, "ignore-key-case", false, "Ignore case differences in object keys")
+	cmd.flags.BoolVar(&cmd.IgnoreValueCase, "ignore-value-case", false, "Ignore case differences in string values")
 	cmd.flags.StringVar(&cmd.ArrayStrategy, "array-strategy", "value", "Array comparison strategy: 'index' or 'value'")
 	cmd.flags.StringVar(&cmd.OutputFormat, "format", "unified", "Output format: 'unified' or 'json-patch'")
 	cmd.flags.StringVar(&cmd.Format1, "format1", "", "Format for first file: 'json', 'yaml', or auto-detect from filename")
@@ -68,10 +75,11 @@ func (c *Command) Parse(args []string) error {
 	for i, arg := range args {
 		if arg == "-C" && i+1 < len(args) {
 			c.contextLinesSet = true
+
 			break
 		}
 	}
-	
+
 	if err := c.flags.Parse(args); err != nil {
 		return fmt.Errorf("parse flags: %w", err)
 	}
@@ -87,7 +95,7 @@ func (c *Command) Parse(args []string) error {
 
 	// Validate incompatible options
 	if c.ShowAll && c.contextLinesSet {
-		return fmt.Errorf("--show-all and -C options are incompatible: context lines are only meaningful when showing only differences")
+		return ErrIncompatibleOptions
 	}
 
 	return nil
@@ -112,6 +120,8 @@ func (c *Command) GetDiffOptions() DiffOptions {
 	opts := DiffOptions{
 		IgnoreZeroValues:  c.IgnoreZeroValues,
 		IgnoreEmptyFields: c.IgnoreEmpty,
+		IgnoreKeyCase:     c.IgnoreKeyCase,
+		IgnoreValueCase:   c.IgnoreValueCase,
 	}
 
 	if c.ArrayStrategy == arrayStrategyIndex {

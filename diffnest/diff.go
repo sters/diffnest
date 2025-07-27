@@ -10,6 +10,8 @@ import (
 type DiffOptions struct {
 	IgnoreEmptyFields bool
 	IgnoreZeroValues  bool
+	IgnoreKeyCase     bool
+	IgnoreValueCase   bool
 	ArrayDiffStrategy ArrayDiffStrategy
 }
 
@@ -109,7 +111,17 @@ func (e *DiffEngine) compareWithPath(a, b *StructuredData, path []string) *DiffR
 		}
 
 		// Default string comparison
-		if a.Value == b.Value {
+		equal := a.Value == b.Value
+		if !equal && e.options.IgnoreValueCase {
+			// Case-insensitive comparison
+			aStr, aOk := a.Value.(string)
+			bStr, bOk := b.Value.(string)
+			if aOk && bOk {
+				equal = strings.EqualFold(aStr, bStr)
+			}
+		}
+
+		if equal {
 			return &DiffResult{
 				Status: StatusSame,
 				Path:   path,
@@ -318,6 +330,10 @@ func (e *DiffEngine) compareObjects(a, b *StructuredData, path []string) *DiffRe
 		Meta:     &DiffMeta{DiffCount: 0},
 	}
 
+	if e.options.IgnoreKeyCase {
+		return e.compareObjectsIgnoreCase(a, b, path, result)
+	}
+
 	// Collect all keys
 	allKeys := make(map[string]bool)
 	for k := range a.Children {
@@ -345,6 +361,85 @@ func (e *DiffEngine) compareObjects(a, b *StructuredData, path []string) *DiffRe
 		}
 
 		childPath := append(append([]string{}, path...), key)
+
+		if !hasA {
+			childA = nil
+		}
+		if !hasB {
+			childB = nil
+		}
+
+		childDiff := e.compareWithPath(childA, childB, childPath)
+
+		if childDiff.Status != StatusSame {
+			result.Status = StatusModified
+			if childDiff.Meta != nil {
+				result.Meta.DiffCount += childDiff.Meta.DiffCount
+			}
+		}
+
+		result.Children = append(result.Children, childDiff)
+	}
+
+	return result
+}
+
+// compareObjectsIgnoreCase compares objects ignoring key case differences.
+func (e *DiffEngine) compareObjectsIgnoreCase(a, b *StructuredData, path []string, result *DiffResult) *DiffResult {
+	// Create case-insensitive key mappings
+	aKeyMap := make(map[string]string) // lowercase -> original
+	bKeyMap := make(map[string]string) // lowercase -> original
+
+	for k := range a.Children {
+		lowerK := strings.ToLower(k)
+		aKeyMap[lowerK] = k
+	}
+	for k := range b.Children {
+		lowerK := strings.ToLower(k)
+		bKeyMap[lowerK] = k
+	}
+
+	// Collect all lowercase keys
+	allLowerKeys := make(map[string]bool)
+	for lowerK := range aKeyMap {
+		allLowerKeys[lowerK] = true
+	}
+	for lowerK := range bKeyMap {
+		allLowerKeys[lowerK] = true
+	}
+
+	// Sort lowercase keys for consistent output
+	lowerKeys := make([]string, 0, len(allLowerKeys))
+	for lowerK := range allLowerKeys {
+		lowerKeys = append(lowerKeys, lowerK)
+	}
+	sort.Strings(lowerKeys)
+
+	// Compare each key (case-insensitive)
+	for _, lowerKey := range lowerKeys {
+		originalKeyA, hasA := aKeyMap[lowerKey]
+		originalKeyB, hasB := bKeyMap[lowerKey]
+
+		var childA, childB *StructuredData
+		var displayKey string
+
+		if hasA {
+			childA = a.Children[originalKeyA]
+			displayKey = originalKeyA
+		}
+		if hasB {
+			childB = b.Children[originalKeyB]
+			if displayKey == "" {
+				displayKey = originalKeyB
+			}
+		}
+
+		// Apply ignore options
+		if e.shouldIgnore(childA, hasA) && e.shouldIgnore(childB, hasB) {
+			continue
+		}
+
+		childPath := append(append([]string{}, path...), displayKey)
 
 		if !hasA {
 			childA = nil

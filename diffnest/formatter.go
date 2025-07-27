@@ -66,6 +66,7 @@ func (f *UnifiedFormatter) formatWithContext(w io.Writer, diff *DiffResult, inde
 				return fmt.Errorf("write multiline header: %w", err)
 			}
 		}
+
 		return f.formatMultilineWithContext(w, diff.Children, indent+"  ")
 	}
 
@@ -75,88 +76,118 @@ func (f *UnifiedFormatter) formatWithContext(w io.Writer, diff *DiffResult, inde
 
 func (f *UnifiedFormatter) formatDiff(w io.Writer, diff *DiffResult, indent string) error {
 	// Skip unchanged items if ShowOnlyDiff is true and not using context lines
-	if f.ShowOnlyDiff && diff.Status == StatusSame && f.ContextLines < 0 {
+	if f.shouldSkipUnchanged(diff) {
 		return nil
-	}
-
-	pathStr := strings.Join(diff.Path, ".")
-	if pathStr != "" {
-		pathStr = " " + pathStr
 	}
 
 	switch diff.Status {
 	case StatusSame:
-		if len(diff.Children) > 0 {
-			// Show children for containers
-			for _, child := range diff.Children {
-				if err := f.formatDiff(w, child, indent); err != nil {
-					return err
-				}
-			}
-		} else {
-			// Show value for primitives
-			if _, err := fmt.Fprintf(w, "  %s%s: %s\n", indent, pathStr, f.formatValue(diff.From)); err != nil {
-				return fmt.Errorf("write same value: %w", err)
-			}
-		}
-
+		return f.formatSameDiff(w, diff, indent)
 	case StatusModified:
-		if len(diff.Children) > 0 {
-			// Check if this is a multiline string diff
-			if diff.From != nil && diff.From.Type == TypeString && diff.To != nil && diff.To.Type == TypeString {
-				// Multiline string with line-by-line diff
-				if !f.ShowOnlyDiff {
-					if _, err := fmt.Fprintf(w, "  %s%s:\n", indent, pathStr); err != nil {
-						return fmt.Errorf("write multiline header: %w", err)
-					}
-				}
-				if f.ShowOnlyDiff && f.ContextLines >= 0 {
-					// Format with context lines
-					if err := f.formatMultilineWithContext(w, diff.Children, indent+"  "); err != nil {
-						return err
-					}
-				} else {
-					// Original behavior
-					for _, child := range diff.Children {
-						if !f.ShowOnlyDiff || child.Status != StatusSame {
-							if err := f.formatLineDiff(w, child, indent+"  "); err != nil {
-								return err
-							}
-						}
-					}
-				}
-			} else {
-				// Show children for containers
-				if f.ShowOnlyDiff && f.ContextLines >= 0 {
-					// Format with context for object/array children
-					if err := f.formatChildrenWithContext(w, diff.Children, indent); err != nil {
-						return err
-					}
-				} else {
-					for _, child := range diff.Children {
-						if err := f.formatDiff(w, child, indent); err != nil {
-							return err
-						}
-					}
-				}
-			}
-		} else {
-			// Show old and new values
-			if _, err := fmt.Fprintf(w, "- %s%s: %s\n", indent, pathStr, f.formatValue(diff.From)); err != nil {
-				return fmt.Errorf("write deleted value: %w", err)
-			}
-			if _, err := fmt.Fprintf(w, "+ %s%s: %s\n", indent, pathStr, f.formatValue(diff.To)); err != nil {
-				return fmt.Errorf("write added value: %w", err)
-			}
-		}
-
+		return f.formatModifiedDiff(w, diff, indent)
 	case StatusDeleted:
-		if err := f.formatDeleted(w, diff, indent); err != nil {
-			return err
-		}
-
+		return f.formatDeleted(w, diff, indent)
 	case StatusAdded:
-		if err := f.formatAdded(w, diff, indent); err != nil {
+		return f.formatAdded(w, diff, indent)
+	}
+
+	return nil
+}
+
+func (f *UnifiedFormatter) shouldSkipUnchanged(diff *DiffResult) bool {
+	return f.ShowOnlyDiff && diff.Status == StatusSame && f.ContextLines < 0
+}
+
+func (f *UnifiedFormatter) getPathString(path []string) string {
+	pathStr := strings.Join(path, ".")
+	if pathStr != "" {
+		pathStr = " " + pathStr
+	}
+
+	return pathStr
+}
+
+func (f *UnifiedFormatter) formatSameDiff(w io.Writer, diff *DiffResult, indent string) error {
+	if len(diff.Children) > 0 {
+		return f.formatChildren(w, diff.Children, indent)
+	}
+
+	// Show value for primitives
+	pathStr := f.getPathString(diff.Path)
+	if _, err := fmt.Fprintf(w, "  %s%s: %s\n", indent, pathStr, f.formatValue(diff.From)); err != nil {
+		return fmt.Errorf("write same value: %w", err)
+	}
+
+	return nil
+}
+
+func (f *UnifiedFormatter) formatModifiedDiff(w io.Writer, diff *DiffResult, indent string) error {
+	if len(diff.Children) == 0 {
+		return f.formatModifiedPrimitive(w, diff, indent)
+	}
+
+	if f.isMultilineStringDiff(diff) {
+		return f.formatMultilineStringDiff(w, diff, indent)
+	}
+
+	return f.formatModifiedContainer(w, diff, indent)
+}
+
+func (f *UnifiedFormatter) formatModifiedPrimitive(w io.Writer, diff *DiffResult, indent string) error {
+	pathStr := f.getPathString(diff.Path)
+	if _, err := fmt.Fprintf(w, "- %s%s: %s\n", indent, pathStr, f.formatValue(diff.From)); err != nil {
+		return fmt.Errorf("write deleted value: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "+ %s%s: %s\n", indent, pathStr, f.formatValue(diff.To)); err != nil {
+		return fmt.Errorf("write added value: %w", err)
+	}
+
+	return nil
+}
+
+func (f *UnifiedFormatter) isMultilineStringDiff(diff *DiffResult) bool {
+	return diff.From != nil && diff.From.Type == TypeString &&
+		diff.To != nil && diff.To.Type == TypeString
+}
+
+func (f *UnifiedFormatter) formatMultilineStringDiff(w io.Writer, diff *DiffResult, indent string) error {
+	if !f.ShowOnlyDiff {
+		pathStr := f.getPathString(diff.Path)
+		if _, err := fmt.Fprintf(w, "  %s%s:\n", indent, pathStr); err != nil {
+			return fmt.Errorf("write multiline header: %w", err)
+		}
+	}
+
+	if f.ShowOnlyDiff && f.ContextLines >= 0 {
+		return f.formatMultilineWithContext(w, diff.Children, indent+"  ")
+	}
+
+	return f.formatMultilineChildren(w, diff.Children, indent+"  ")
+}
+
+func (f *UnifiedFormatter) formatMultilineChildren(w io.Writer, children []*DiffResult, indent string) error {
+	for _, child := range children {
+		if !f.ShowOnlyDiff || child.Status != StatusSame {
+			if err := f.formatLineDiff(w, child, indent); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (f *UnifiedFormatter) formatModifiedContainer(w io.Writer, diff *DiffResult, indent string) error {
+	if f.ShowOnlyDiff && f.ContextLines >= 0 {
+		return f.formatChildrenWithContext(w, diff.Children, indent)
+	}
+
+	return f.formatChildren(w, diff.Children, indent)
+}
+
+func (f *UnifiedFormatter) formatChildren(w io.Writer, children []*DiffResult, indent string) error {
+	for _, child := range children {
+		if err := f.formatDiff(w, child, indent); err != nil {
 			return err
 		}
 	}
@@ -327,12 +358,12 @@ func (f *UnifiedFormatter) formatMultilineWithContext(w io.Writer, lines []*Diff
 	for _, idx := range changedIndices {
 		// Always show the changed line
 		showLine[idx] = true
-		
+
 		// Show context before
 		for i := 1; i <= f.ContextLines && idx-i >= 0; i++ {
 			showLine[idx-i] = true
 		}
-		
+
 		// Show context after
 		for i := 1; i <= f.ContextLines && idx+i < len(lines); i++ {
 			showLine[idx+i] = true
@@ -380,12 +411,12 @@ func (f *UnifiedFormatter) formatChildrenWithContext(w io.Writer, children []*Di
 	for _, idx := range changedIndices {
 		// Always show the changed child
 		showChild[idx] = true
-		
+
 		// Show context before
 		for i := 1; i <= f.ContextLines && idx-i >= 0; i++ {
 			showChild[idx-i] = true
 		}
-		
+
 		// Show context after
 		for i := 1; i <= f.ContextLines && idx+i < len(children); i++ {
 			showChild[idx+i] = true
@@ -424,6 +455,7 @@ func (f *UnifiedFormatter) hasChangedDescendants(diff *DiffResult) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
