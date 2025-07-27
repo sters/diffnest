@@ -14,7 +14,7 @@ var ErrInvalidArgs = errors.New("expected 2 files")
 // Command represents the CLI command configuration.
 type Command struct {
 	// Flags
-	ShowOnlyDiff     bool
+	ShowAll          bool
 	IgnoreZeroValues bool
 	IgnoreEmpty      bool
 	ArrayStrategy    string
@@ -23,6 +23,7 @@ type Command struct {
 	Format2          string
 	Verbose          bool
 	Help             bool
+	ContextLines     int
 
 	// Arguments
 	File1 string
@@ -30,15 +31,19 @@ type Command struct {
 
 	// FlagSet for parsing
 	flags *flag.FlagSet
+	
+	// Track if context lines was explicitly set
+	contextLinesSet bool
 }
 
 // NewCommand creates a new Command instance.
 func NewCommand(name string, errorHandling flag.ErrorHandling) *Command {
 	cmd := &Command{
-		flags: flag.NewFlagSet(name, errorHandling),
+		flags:        flag.NewFlagSet(name, errorHandling),
+		ContextLines: 3, // Default value
 	}
 
-	cmd.flags.BoolVar(&cmd.ShowOnlyDiff, "diff-only", false, "Show only differences")
+	cmd.flags.BoolVar(&cmd.ShowAll, "show-all", false, "Show all fields including unchanged ones")
 	cmd.flags.BoolVar(&cmd.IgnoreZeroValues, "ignore-zero-values", false, "Treat zero values (0, false, \"\", [], {}) as null")
 	cmd.flags.BoolVar(&cmd.IgnoreEmpty, "ignore-empty", false, "Ignore empty fields")
 	cmd.flags.StringVar(&cmd.ArrayStrategy, "array-strategy", "value", "Array comparison strategy: 'index' or 'value'")
@@ -47,6 +52,7 @@ func NewCommand(name string, errorHandling flag.ErrorHandling) *Command {
 	cmd.flags.StringVar(&cmd.Format2, "format2", "", "Format for second file: 'json', 'yaml', or auto-detect from filename")
 	cmd.flags.BoolVar(&cmd.Verbose, "v", false, "Verbose output")
 	cmd.flags.BoolVar(&cmd.Help, "h", false, "Show help")
+	cmd.flags.IntVar(&cmd.ContextLines, "C", 3, "Number of context lines to show (only for unified format)")
 
 	return cmd
 }
@@ -58,6 +64,14 @@ func (c *Command) SetOutput(w io.Writer) {
 
 // Parse parses command line arguments.
 func (c *Command) Parse(args []string) error {
+	// Check if -C flag was explicitly set
+	for i, arg := range args {
+		if arg == "-C" && i+1 < len(args) {
+			c.contextLinesSet = true
+			break
+		}
+	}
+	
 	if err := c.flags.Parse(args); err != nil {
 		return fmt.Errorf("parse flags: %w", err)
 	}
@@ -69,6 +83,11 @@ func (c *Command) Parse(args []string) error {
 	if c.flags.NArg() >= 2 {
 		c.File1 = c.flags.Arg(0)
 		c.File2 = c.flags.Arg(1)
+	}
+
+	// Validate incompatible options
+	if c.ShowAll && c.contextLinesSet {
+		return fmt.Errorf("--show-all and -C options are incompatible: context lines are only meaningful when showing only differences")
 	}
 
 	return nil
@@ -111,8 +130,9 @@ func (c *Command) GetFormatter() Formatter {
 		return &JSONPatchFormatter{}
 	default:
 		return &UnifiedFormatter{
-			ShowOnlyDiff: c.ShowOnlyDiff,
+			ShowOnlyDiff: !c.ShowAll,
 			Verbose:      c.Verbose,
+			ContextLines: c.ContextLines,
 		}
 	}
 }

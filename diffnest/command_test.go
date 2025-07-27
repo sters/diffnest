@@ -30,12 +30,12 @@ func TestCommand_Parse(t *testing.T) {
 		},
 		{
 			name:    "With flags",
-			args:    []string{"-diff-only", "-v", "file1.yaml", "file2.yaml"},
+			args:    []string{"-show-all", "-v", "file1.yaml", "file2.yaml"},
 			wantErr: false,
 			check: func(t *testing.T, cmd *Command) {
 				t.Helper()
-				if !cmd.ShowOnlyDiff {
-					t.Error("ShowOnlyDiff should be true")
+				if !cmd.ShowAll {
+					t.Error("ShowAll should be true")
 				}
 				if !cmd.Verbose {
 					t.Error("Verbose should be true")
@@ -91,6 +91,36 @@ func TestCommand_Parse(t *testing.T) {
 				}
 				if cmd.Format2 != "yaml" {
 					t.Errorf("Format2 = %v, want yaml", cmd.Format2)
+				}
+			},
+		},
+		{
+			name:    "Incompatible options: show-all and context lines",
+			args:    []string{"-show-all", "-C", "3", "f1", "f2"},
+			wantErr: true,
+			check: func(t *testing.T, cmd *Command) {
+				// Should not reach here since parse should fail
+			},
+		},
+		{
+			name:    "Context lines alone is valid",
+			args:    []string{"-C", "5", "f1", "f2"},
+			wantErr: false,
+			check: func(t *testing.T, cmd *Command) {
+				t.Helper()
+				if cmd.ContextLines != 5 {
+					t.Errorf("ContextLines = %v, want 5", cmd.ContextLines)
+				}
+			},
+		},
+		{
+			name:    "Show all alone is valid",
+			args:    []string{"-show-all", "f1", "f2"},
+			wantErr: false,
+			check: func(t *testing.T, cmd *Command) {
+				t.Helper()
+				if !cmd.ShowAll {
+					t.Error("ShowAll should be true")
 				}
 			},
 		},
@@ -182,7 +212,7 @@ func TestCommand_GetFormatter(t *testing.T) {
 	tests := []struct {
 		name     string
 		format   string
-		diffOnly bool
+		showAll  bool
 		verbose  bool
 		wantType string
 	}{
@@ -197,9 +227,9 @@ func TestCommand_GetFormatter(t *testing.T) {
 			wantType: "*diffnest.JSONPatchFormatter",
 		},
 		{
-			name:     "Unified with options",
+			name:     "Unified with show all",
 			format:   "unified",
-			diffOnly: true,
+			showAll:  true,
 			verbose:  true,
 			wantType: "*diffnest.UnifiedFormatter",
 		},
@@ -209,7 +239,7 @@ func TestCommand_GetFormatter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := NewCommand("test", flag.ContinueOnError)
 			cmd.OutputFormat = tt.format
-			cmd.ShowOnlyDiff = tt.diffOnly
+			cmd.ShowAll = tt.showAll
 			cmd.Verbose = tt.verbose
 
 			formatter := cmd.GetFormatter()
@@ -219,10 +249,15 @@ func TestCommand_GetFormatter(t *testing.T) {
 				if tt.wantType != "*diffnest.UnifiedFormatter" {
 					t.Errorf("Got UnifiedFormatter, want %s", tt.wantType)
 				}
-				if tt.diffOnly {
+				if tt.showAll {
+					uf := formatter
+					if uf.ShowOnlyDiff {
+						t.Error("ShowOnlyDiff should be false when ShowAll is true")
+					}
+				} else {
 					uf := formatter
 					if !uf.ShowOnlyDiff {
-						t.Error("ShowOnlyDiff should be true")
+						t.Error("ShowOnlyDiff should be true by default")
 					}
 				}
 			case *JSONPatchFormatter:
@@ -299,7 +334,7 @@ func TestCommand_Usage(t *testing.T) {
 	expectedStrings := []string{
 		"Usage: diffnest",
 		"Options:",
-		"-diff-only",
+		"-show-all",
 		"-array-strategy",
 		"Example:",
 		"file1.json file2.json",

@@ -20,6 +20,7 @@ type Formatter interface {
 type UnifiedFormatter struct {
 	ShowOnlyDiff bool
 	Verbose      bool
+	ContextLines int
 }
 
 // Format formats diff results.
@@ -31,17 +32,50 @@ func (f *UnifiedFormatter) Format(w io.Writer, results []*DiffResult) error {
 			}
 		}
 
-		if err := f.formatDiff(w, result, ""); err != nil {
-			return err
+		// Apply context filtering at the top level if needed
+		if f.ShowOnlyDiff && f.ContextLines >= 0 && len(result.Children) > 0 {
+			if err := f.formatWithContext(w, result, ""); err != nil {
+				return err
+			}
+		} else {
+			if err := f.formatDiff(w, result, ""); err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
 }
 
+// formatWithContext formats a diff result with context lines applied.
+func (f *UnifiedFormatter) formatWithContext(w io.Writer, diff *DiffResult, indent string) error {
+	if len(diff.Children) == 0 {
+		return f.formatDiff(w, diff, indent)
+	}
+
+	pathStr := strings.Join(diff.Path, ".")
+	if pathStr != "" {
+		pathStr = " " + pathStr
+	}
+
+	// Check if this is a multiline string diff
+	if diff.From != nil && diff.From.Type == TypeString && diff.To != nil && diff.To.Type == TypeString {
+		// Multiline string with line-by-line diff
+		if !f.ShowOnlyDiff {
+			if _, err := fmt.Fprintf(w, "  %s%s:\n", indent, pathStr); err != nil {
+				return fmt.Errorf("write multiline header: %w", err)
+			}
+		}
+		return f.formatMultilineWithContext(w, diff.Children, indent+"  ")
+	}
+
+	// Object or array with children
+	return f.formatChildrenWithContext(w, diff.Children, indent)
+}
+
 func (f *UnifiedFormatter) formatDiff(w io.Writer, diff *DiffResult, indent string) error {
-	// Skip unchanged items if ShowOnlyDiff is true
-	if f.ShowOnlyDiff && diff.Status == StatusSame {
+	// Skip unchanged items if ShowOnlyDiff is true and not using context lines
+	if f.ShowOnlyDiff && diff.Status == StatusSame && f.ContextLines < 0 {
 		return nil
 	}
 
@@ -76,18 +110,33 @@ func (f *UnifiedFormatter) formatDiff(w io.Writer, diff *DiffResult, indent stri
 						return fmt.Errorf("write multiline header: %w", err)
 					}
 				}
-				for _, child := range diff.Children {
-					if !f.ShowOnlyDiff || child.Status != StatusSame {
-						if err := f.formatLineDiff(w, child, indent+"  "); err != nil {
-							return err
+				if f.ShowOnlyDiff && f.ContextLines >= 0 {
+					// Format with context lines
+					if err := f.formatMultilineWithContext(w, diff.Children, indent+"  "); err != nil {
+						return err
+					}
+				} else {
+					// Original behavior
+					for _, child := range diff.Children {
+						if !f.ShowOnlyDiff || child.Status != StatusSame {
+							if err := f.formatLineDiff(w, child, indent+"  "); err != nil {
+								return err
+							}
 						}
 					}
 				}
 			} else {
 				// Show children for containers
-				for _, child := range diff.Children {
-					if err := f.formatDiff(w, child, indent); err != nil {
+				if f.ShowOnlyDiff && f.ContextLines >= 0 {
+					// Format with context for object/array children
+					if err := f.formatChildrenWithContext(w, diff.Children, indent); err != nil {
 						return err
+					}
+				} else {
+					for _, child := range diff.Children {
+						if err := f.formatDiff(w, child, indent); err != nil {
+							return err
+						}
 					}
 				}
 			}
@@ -257,6 +306,125 @@ func (f *UnifiedFormatter) formatLineDiff(w io.Writer, diff *DiffResult, indent 
 	}
 
 	return nil
+}
+
+// formatMultilineWithContext formats multiline string diffs with context lines.
+func (f *UnifiedFormatter) formatMultilineWithContext(w io.Writer, lines []*DiffResult, indent string) error {
+	// Find all changed line indices
+	var changedIndices []int
+	for i, line := range lines {
+		if line.Status != StatusSame {
+			changedIndices = append(changedIndices, i)
+		}
+	}
+
+	if len(changedIndices) == 0 {
+		return nil
+	}
+
+	// Calculate which lines to show based on context
+	showLine := make([]bool, len(lines))
+	for _, idx := range changedIndices {
+		// Always show the changed line
+		showLine[idx] = true
+		
+		// Show context before
+		for i := 1; i <= f.ContextLines && idx-i >= 0; i++ {
+			showLine[idx-i] = true
+		}
+		
+		// Show context after
+		for i := 1; i <= f.ContextLines && idx+i < len(lines); i++ {
+			showLine[idx+i] = true
+		}
+	}
+
+	// Format the lines
+	prevShown := false
+	for i, line := range lines {
+		if showLine[i] {
+			if !prevShown && i > 0 {
+				// Add separator for skipped lines
+				if _, err := fmt.Fprintf(w, "   %s...\n", indent); err != nil {
+					return fmt.Errorf("write separator: %w", err)
+				}
+			}
+			if err := f.formatLineDiff(w, line, indent); err != nil {
+				return err
+			}
+			prevShown = true
+		} else {
+			prevShown = false
+		}
+	}
+
+	return nil
+}
+
+// formatChildrenWithContext formats object/array children with context lines.
+func (f *UnifiedFormatter) formatChildrenWithContext(w io.Writer, children []*DiffResult, indent string) error {
+	// Find all changed child indices
+	var changedIndices []int
+	for i, child := range children {
+		if child.Status != StatusSame || f.hasChangedDescendants(child) {
+			changedIndices = append(changedIndices, i)
+		}
+	}
+
+	if len(changedIndices) == 0 {
+		return nil
+	}
+
+	// Calculate which children to show based on context
+	showChild := make([]bool, len(children))
+	for _, idx := range changedIndices {
+		// Always show the changed child
+		showChild[idx] = true
+		
+		// Show context before
+		for i := 1; i <= f.ContextLines && idx-i >= 0; i++ {
+			showChild[idx-i] = true
+		}
+		
+		// Show context after
+		for i := 1; i <= f.ContextLines && idx+i < len(children); i++ {
+			showChild[idx+i] = true
+		}
+	}
+
+	// Format the children
+	prevShown := false
+	for i, child := range children {
+		if showChild[i] {
+			if !prevShown && i > 0 {
+				// Add separator for skipped items
+				if _, err := fmt.Fprintf(w, "  %s...\n", indent); err != nil {
+					return fmt.Errorf("write separator: %w", err)
+				}
+			}
+			if err := f.formatDiff(w, child, indent); err != nil {
+				return err
+			}
+			prevShown = true
+		} else {
+			prevShown = false
+		}
+	}
+
+	return nil
+}
+
+// hasChangedDescendants checks if a diff result has any changed descendants.
+func (f *UnifiedFormatter) hasChangedDescendants(diff *DiffResult) bool {
+	if diff.Status != StatusSame {
+		return true
+	}
+	for _, child := range diff.Children {
+		if f.hasChangedDescendants(child) {
+			return true
+		}
+	}
+	return false
 }
 
 // JSONPatchFormatter implements RFC 6902 JSON Patch format.

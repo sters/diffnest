@@ -10,6 +10,7 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 		name         string
 		results      []*DiffResult
 		showOnlyDiff bool
+		contextLines int
 		want         []string // Expected lines in output
 	}{
 		{
@@ -22,6 +23,7 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 					To:     &StructuredData{Type: TypeString, Value: "Jane"},
 				},
 			},
+			contextLines: -1,
 			want: []string{
 				"-  name: John",
 				"+  name: Jane",
@@ -36,6 +38,7 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 					To:     &StructuredData{Type: TypeNumber, Value: 30},
 				},
 			},
+			contextLines: -1,
 			want: []string{
 				"+  age: 30",
 			},
@@ -49,6 +52,7 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 					From:   &StructuredData{Type: TypeString, Value: "Tokyo"},
 				},
 			},
+			contextLines: -1,
 			want: []string{
 				"-  city: Tokyo",
 			},
@@ -64,6 +68,7 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 				},
 			},
 			showOnlyDiff: false,
+			contextLines: -1,
 			want: []string{
 				"   id: 123",
 			},
@@ -79,6 +84,7 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 				},
 			},
 			showOnlyDiff: true,
+			contextLines: -1,
 			want:         []string{}, // Should be empty
 		},
 		{
@@ -109,6 +115,7 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 					},
 				},
 			},
+			contextLines: -1,
 			want: []string{
 				"-  user: john",
 				"+  user: jane",
@@ -129,6 +136,7 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 					To:     &StructuredData{Type: TypeString, Value: "added"},
 				},
 			},
+			contextLines: -1,
 			want: []string{
 				"-  a: old",
 				"+  a: new",
@@ -173,9 +181,64 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 				},
 			},
 			showOnlyDiff: true,
+			contextLines: -1,
 			want: []string{
 				"-  items.[1]: b",
 				"+  items.[1]: c",
+			},
+		},
+		{
+			name: "Context lines with multiline string",
+			results: []*DiffResult{
+				{
+					Status: StatusModified,
+					Path:   []string{"text"},
+					From:   &StructuredData{Type: TypeString, Value: "line1\nline2\nline3\nline4\nline5\nline6\nline7"},
+					To:     &StructuredData{Type: TypeString, Value: "line1\nline2\nmodified3\nline4\nline5\nline6\nline7"},
+					Children: []*DiffResult{
+						{Status: StatusSame, From: &StructuredData{Type: TypeString, Value: "line1"}},
+						{Status: StatusSame, From: &StructuredData{Type: TypeString, Value: "line2"}},
+						{Status: StatusModified, From: &StructuredData{Type: TypeString, Value: "line3"}, To: &StructuredData{Type: TypeString, Value: "modified3"}},
+						{Status: StatusSame, From: &StructuredData{Type: TypeString, Value: "line4"}},
+						{Status: StatusSame, From: &StructuredData{Type: TypeString, Value: "line5"}},
+						{Status: StatusSame, From: &StructuredData{Type: TypeString, Value: "line6"}},
+						{Status: StatusSame, From: &StructuredData{Type: TypeString, Value: "line7"}},
+					},
+				},
+			},
+			showOnlyDiff: true,
+			contextLines: 1,
+			want: []string{
+				"     line2",
+				"-    line3",
+				"+    modified3",
+				"     line4",
+			},
+		},
+		{
+			name: "Context lines with object children",
+			results: []*DiffResult{
+				{
+					Status: StatusModified,
+					Path:   []string{},
+					From:   &StructuredData{Type: TypeObject},
+					To:     &StructuredData{Type: TypeObject},
+					Children: []*DiffResult{
+						{Status: StatusSame, Path: []string{"field1"}, From: &StructuredData{Type: TypeString, Value: "value1"}},
+						{Status: StatusSame, Path: []string{"field2"}, From: &StructuredData{Type: TypeString, Value: "value2"}},
+						{Status: StatusModified, Path: []string{"field3"}, From: &StructuredData{Type: TypeString, Value: "old"}, To: &StructuredData{Type: TypeString, Value: "new"}},
+						{Status: StatusSame, Path: []string{"field4"}, From: &StructuredData{Type: TypeString, Value: "value4"}},
+						{Status: StatusSame, Path: []string{"field5"}, From: &StructuredData{Type: TypeString, Value: "value5"}},
+					},
+				},
+			},
+			showOnlyDiff: true,
+			contextLines: 1,
+			want: []string{
+				"   field2: value2",
+				"-  field3: old",
+				"+  field3: new",
+				"   field4: value4",
 			},
 		},
 	}
@@ -184,6 +247,7 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			formatter := &UnifiedFormatter{
 				ShowOnlyDiff: tt.showOnlyDiff,
+				ContextLines: tt.contextLines,
 			}
 			var buf strings.Builder
 			err := formatter.Format(&buf, tt.results)

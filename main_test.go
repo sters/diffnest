@@ -14,13 +14,13 @@ func TestCLI(t *testing.T) {
 	json2 := filepath.Join(tempDir, "test2.json")
 	yaml1 := filepath.Join(tempDir, "test1.yaml")
 
-	if err := os.WriteFile(json1, []byte(`{"name": "test", "value": 42}`), 0o644); err != nil {
+	if err := os.WriteFile(json1, []byte(`{"name": "test", "value": 42, "enabled": true}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(json2, []byte(`{"name": "test2", "value": 43}`), 0o644); err != nil {
+	if err := os.WriteFile(json2, []byte(`{"name": "test2", "value": 43, "enabled": true}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(yaml1, []byte("name: test\nvalue: 42"), 0o644); err != nil {
+	if err := os.WriteFile(yaml1, []byte("name: test\nvalue: 42\nenabled: true"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -63,7 +63,7 @@ func TestCLI(t *testing.T) {
 		},
 		{
 			name:     "Same content different format",
-			args:     []string{json1, yaml1},
+			args:     []string{"-show-all", json1, yaml1},
 			wantExit: 0,
 			wantOut:  "name: test",
 		},
@@ -74,9 +74,10 @@ func TestCLI(t *testing.T) {
 			wantOut:  `{"op": "replace"`,
 		},
 		{
-			name:     "Diff only flag",
-			args:     []string{"-diff-only", json1, json2},
+			name:     "Show all flag",
+			args:     []string{"-show-all", json1, json2},
 			wantExit: 1,
+			wantOut:  "   enabled: true",
 		},
 		{
 			name:     "Verbose flag",
@@ -86,7 +87,7 @@ func TestCLI(t *testing.T) {
 		},
 		{
 			name:     "Force formats",
-			args:     []string{"-format1", "json", "-format2", "yaml", json1, yaml1},
+			args:     []string{"-show-all", "-format1", "json", "-format2", "yaml", json1, yaml1},
 			wantExit: 0,
 		},
 	}

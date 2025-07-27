@@ -6,7 +6,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/sters/diffnest.svg)](https://pkg.go.dev/github.com/sters/diffnest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A powerful cross-format diff tool that compares JSON, YAML, and other structured data files with an intuitive unified diff output.
+A powerful cross-format diff tool that compares JSON, YAML, and other structured data files with an intuitive unified diff output. By default, diffnest shows only the differences between files, making it easy to spot changes in large configuration files.
 
 ## Features
 
@@ -15,6 +15,7 @@ A powerful cross-format diff tool that compares JSON, YAML, and other structured
 - **Smart array comparison**: Compare arrays by index or by value matching
 - **Multiple output formats**: Unified diff (default) or JSON Patch (RFC 6902)
 - **Detailed multiline string diffs**: Line-by-line comparison for multiline strings
+- **Context control**: Adjustable context lines around changes for better readability
 - **Flexible options**: Ignore zero values, show only differences, and more
 - **Standard input support**: Compare files from stdin using `-`
 
@@ -48,22 +49,29 @@ cat file1.json | diffnest - file2.json
 ### Options
 
 ```
--diff-only              Show only differences (hide unchanged fields)
--ignore-zero-values     Treat zero values (0, false, "", [], {}) as null
+-show-all              Show all fields including unchanged ones (default: show only differences)
+-ignore-zero-values    Treat zero values (0, false, "", [], {}) as null
 -ignore-empty          Ignore empty fields
 -array-strategy        Array comparison strategy: 'index' or 'value' (default: value)
 -format                Output format: 'unified' or 'json-patch' (default: unified)
 -format1               Format for first file: 'json', 'yaml', or auto-detect
 -format2               Format for second file: 'json', 'yaml', or auto-detect
+-C                     Number of context lines to show (incompatible with -show-all, default: 3)
 -v                     Verbose output
 -h                     Show help
 ```
 
 ### Examples
 
-#### Show only differences
+#### Default behavior (show only differences)
 ```shell
-diffnest -diff-only actual.json expected.json
+# By default, only differences are shown
+diffnest actual.json expected.json
+```
+
+#### Show all fields including unchanged
+```shell
+diffnest -show-all actual.json expected.json
 ```
 
 #### Compare arrays by index (ordered comparison)
@@ -79,6 +87,15 @@ diffnest -format json-patch old.json new.json
 #### Ignore zero values
 ```shell
 diffnest -ignore-zero-values sparse1.json sparse2.json
+```
+
+#### Control context lines
+```shell
+# Show only changed lines (no context)
+diffnest -C 0 file1.json file2.json
+
+# Show more context around changes
+diffnest -C 5 file1.json file2.json
 ```
 
 ## Output Examples
@@ -152,6 +169,68 @@ Multiline strings are compared line-by-line for better readability:
 +    line 3: added line
 ```
 
+### Context Lines Control
+
+The `-C` option allows you to control how many unchanged lines are shown around changes, similar to traditional diff tools. This option is only available when showing differences (default behavior) and cannot be used with `-show-all`:
+
+```shell
+# Show minimal context (only changed lines)
+diffnest -C 0 file1.json file2.json
+
+# Invalid: cannot combine -C with -show-all
+# diffnest -show-all -C 2 file1.json file2.json  # Error!
+```
+
+Example output with `-C 0`:
+```diff
+-  field3: old
++  field3: new
+```
+
+Example output with `-C 2`:
+```diff
+   field1: value1
+   field2: value2
+-  field3: old
++  field3: new
+   field4: value4
+   field5: value5
+```
+
+Example output with `-show-all`:
+```diff
+   field1: value1
+   field2: value2
+-  field3: old
++  field3: new
+   field4: value4
+   field5: value5
+   field6: value6
+   field7: value7
+   ... (all fields shown)
+```
+
+For large files with scattered changes, context control helps focus on what matters:
+```diff
+   field2: value2
+-  field3: old
++  field3: new
+   field4: value4
+   ...
+   field98: value98
+-  field99: old
++  field99: new
+   field100: value100
+```
+
+**Important:** The `-C` option is incompatible with `-show-all`. When using `-show-all`, all fields are displayed regardless of context settings.
+
+## Option Compatibility
+
+Some options are incompatible and cannot be used together:
+
+- `-show-all` and `-C`: Context lines are only meaningful when showing differences. When using `-show-all`, all fields are displayed.
+
 ## Exit Codes
 
 - `0`: No differences found
@@ -173,6 +252,7 @@ results := diffnest.Compare(data1, data2, opts)
 // Format the results
 formatter := &diffnest.UnifiedFormatter{
     ShowOnlyDiff: true,
+    ContextLines: 3,  // Number of context lines
 }
 formatter.Format(os.Stdout, results)
 ```
