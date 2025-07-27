@@ -14,6 +14,12 @@ linters:
     - testpackage
     - wsl
 
+linters-settings:
+  maintidx:
+    under: 20
+  nestif:
+    min-complexity: 20
+
 issues:
   exclude-dirs:
     - bin
@@ -37,3 +43,5 @@ issues:
         - goerr113
         - gosec
         - paralleltest
+        - maintidx
+        - nestif
