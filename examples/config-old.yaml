@@ -1,0 +1,13 @@
+app:
+  name: MyApp
+  version: 1.0.0
+  description: |
+    This is a sample application
+    that demonstrates multiline strings.
+    It has several features:
+    - Feature A
+    - Feature B
+    - Feature C
+logging:
+  level: info
+  format: json

@@ -107,7 +107,7 @@ func (e *DiffEngine) compareWithPath(a, b *StructuredData, path []string) *DiffR
 		if e.shouldDoLineDiff(a, b) {
 			return e.compareMultilineStrings(a, b, path)
 		}
-		
+
 		// Default string comparison
 		if a.Value == b.Value {
 			return &DiffResult{
@@ -372,21 +372,21 @@ func (e *DiffEngine) equalNumbers(a, b any) bool {
 	// Convert both values to float64 for comparison
 	aFloat := toFloat64(a)
 	bFloat := toFloat64(b)
-	
+
 	// Check if the conversion was successful for both
 	aInt, aIsInt := toInt64(a)
 	bInt, bIsInt := toInt64(b)
-	
+
 	// If both are integers, compare as integers
 	if aIsInt && bIsInt {
 		return aInt == bInt
 	}
-	
+
 	// Otherwise compare as floats
 	return aFloat == bFloat
 }
 
-// toFloat64 converts various numeric types to float64
+// toFloat64 converts various numeric types to float64.
 func toFloat64(v any) float64 {
 	switch val := v.(type) {
 	case int:
@@ -418,7 +418,7 @@ func toFloat64(v any) float64 {
 	}
 }
 
-// toInt64 converts various integer types to int64
+// toInt64 converts various integer types to int64.
 func toInt64(v any) (int64, bool) {
 	switch val := v.(type) {
 	case int:
@@ -432,6 +432,7 @@ func toInt64(v any) (int64, bool) {
 	case int64:
 		return val, true
 	case uint:
+		// #nosec G115 - values come from JSON/YAML parsing
 		return int64(val), true
 	case uint8:
 		return int64(val), true
@@ -443,16 +444,19 @@ func toInt64(v any) (int64, bool) {
 		if val <= 9223372036854775807 { // max int64
 			return int64(val), true
 		}
+
 		return 0, false
 	case float32:
 		if float64(val) == float64(int64(val)) {
 			return int64(val), true
 		}
+
 		return 0, false
 	case float64:
 		if val == float64(int64(val)) {
 			return int64(val), true
 		}
+
 		return 0, false
 	default:
 		return 0, false
@@ -610,7 +614,7 @@ func Compare(docsA, docsB []*StructuredData, options DiffOptions) []*DiffResult 
 	return results
 }
 
-// shouldDoLineDiff determines if we should do line-by-line diff for multiline strings
+// shouldDoLineDiff determines if we should do line-by-line diff for multiline strings.
 func (e *DiffEngine) shouldDoLineDiff(a, b *StructuredData) bool {
 	// Both must be strings
 	if a.Type != TypeString || b.Type != TypeString {
@@ -629,16 +633,22 @@ func (e *DiffEngine) shouldDoLineDiff(a, b *StructuredData) bool {
 	// Check if either string is multiline
 	aMultiline := strings.Contains(aStr, "\n")
 	bMultiline := strings.Contains(bStr, "\n")
-	
+
 	// For multiline strings, do line-by-line diff
 	// This helps with configuration files and similar content
 	return aMultiline || bMultiline
 }
 
-// compareMultilineStrings compares multiline strings line by line
+// compareMultilineStrings compares multiline strings line by line.
 func (e *DiffEngine) compareMultilineStrings(a, b *StructuredData, path []string) *DiffResult {
-	aStr := a.Value.(string)
-	bStr := b.Value.(string)
+	aStr, ok := a.Value.(string)
+	if !ok {
+		return nil
+	}
+	bStr, ok := b.Value.(string)
+	if !ok {
+		return nil
+	}
 
 	aLines := strings.Split(aStr, "\n")
 	bLines := strings.Split(bStr, "\n")
@@ -694,7 +704,7 @@ func (e *DiffEngine) compareMultilineStrings(a, b *StructuredData, path []string
 				lastPath := child.Path[len(child.Path)-1]
 				if strings.HasPrefix(lastPath, "[") && strings.HasSuffix(lastPath, "]") {
 					// Extract line number from [n] format
-					lineNum := lastPath[1:len(lastPath)-1]
+					lineNum := lastPath[1 : len(lastPath)-1]
 					child.Path[len(child.Path)-1] = "line " + lineNum
 				}
 			}

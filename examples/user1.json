@@ -1,0 +1,11 @@
+{
+  "id": 123,
+  "name": "John Doe",
+  "email": "user@example.com",
+  "active": true,
+  "roles": ["user", "admin"],
+  "settings": {
+    "theme": "dark",
+    "notifications": true
+  }
+}

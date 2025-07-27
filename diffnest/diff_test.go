@@ -512,7 +512,7 @@ func TestDiffEngine_MultilineStringComparison(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			engine := &DiffEngine{}
-			
+
 			data1 := &StructuredData{
 				Type: TypeObject,
 				Children: map[string]*StructuredData{
@@ -524,7 +524,7 @@ func TestDiffEngine_MultilineStringComparison(t *testing.T) {
 				},
 				Meta: &Metadata{Format: "yaml"},
 			}
-			
+
 			data2 := &StructuredData{
 				Type: TypeObject,
 				Children: map[string]*StructuredData{
@@ -536,13 +536,13 @@ func TestDiffEngine_MultilineStringComparison(t *testing.T) {
 				},
 				Meta: &Metadata{Format: "yaml"},
 			}
-			
+
 			result := engine.Compare(data1, data2)
-			
+
 			if result.Status != tt.wantStatus {
 				t.Errorf("Compare() status = %v, want %v", result.Status, tt.wantStatus)
 			}
-			
+
 			// When strings are different, check if multiline diff is applied
 			if tt.wantStatus == StatusModified {
 				if len(result.Children) != 1 {

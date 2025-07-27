@@ -40,7 +40,6 @@ func DetectFormatFromFilename(filename string) string {
 	case ".toml":
 		return FormatTOML
 	default:
-		// Default to YAML (since YAML is a superset of JSON)
 		return FormatYAML
 	}
 }
@@ -54,7 +53,6 @@ func ParseWithFormat(reader io.Reader, format string) ([]*StructuredData, error)
 	case FormatYAML:
 		parser = &YAMLParser{}
 	case FormatTOML:
-		// TODO: Add TOML parser when needed
 		return nil, fmt.Errorf("%w: TOML parser not implemented yet", ErrUnsupportedFormat)
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedFormat, format)
@@ -67,7 +65,6 @@ func ParseWithFormat(reader io.Reader, format string) ([]*StructuredData, error)
 
 	return result, nil
 }
-
 
 // JSONParser implements Parser for JSON.
 type JSONParser struct{}
@@ -110,7 +107,6 @@ func (p *YAMLParser) Parse(reader io.Reader) ([]*StructuredData, error) {
 		return nil, fmt.Errorf("failed to read content: %w", err)
 	}
 
-	// Split by document separator
 	docs := strings.Split(string(content), "\n---\n")
 	results := make([]*StructuredData, 0, len(docs))
 
@@ -191,7 +187,6 @@ func convertToStructured(raw any, format string) *StructuredData {
 		}
 
 	default:
-		// Handle yaml.MapSlice for ordered maps
 		if ms, ok := v.(yaml.MapSlice); ok {
 			children := make(map[string]*StructuredData)
 			for _, item := range ms {
@@ -207,7 +202,6 @@ func convertToStructured(raw any, format string) *StructuredData {
 			}
 		}
 
-		// Fallback to string representation
 		return &StructuredData{
 			Type:  TypeString,
 			Value: fmt.Sprint(v),

@@ -185,15 +185,20 @@ func TestUnifiedFormatter_Format(t *testing.T) {
 			formatter := &UnifiedFormatter{
 				ShowOnlyDiff: tt.showOnlyDiff,
 			}
-			got := formatter.Format(tt.results)
-			
+			var buf strings.Builder
+			err := formatter.Format(&buf, tt.results)
+			if err != nil {
+				t.Fatalf("UnifiedFormatter.Format() error = %v", err)
+			}
+			got := buf.String()
+
 			// Check if all expected lines are present
 			for _, want := range tt.want {
 				if !strings.Contains(got, want) {
 					t.Errorf("UnifiedFormatter.Format() missing expected line:\n%q\nGot:\n%s", want, got)
 				}
 			}
-			
+
 			// For empty expected output, check that output is empty
 			if len(tt.want) == 0 && strings.TrimSpace(got) != "" {
 				t.Errorf("UnifiedFormatter.Format() expected empty output, got:\n%s", got)
@@ -343,15 +348,21 @@ func TestJSONPatchFormatter_Format(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			formatter := &JSONPatchFormatter{}
-			got := formatter.Format(tt.results)
-			
+			var buf strings.Builder
+			err := formatter.Format(&buf, tt.results)
+			if err != nil {
+				t.Fatalf("JSONPatchFormatter.Format() error = %v", err)
+			}
+			got := buf.String()
+
 			if len(tt.want) == 0 {
 				if strings.TrimSpace(got) != "[]" {
 					t.Errorf("JSONPatchFormatter.Format() expected empty array, got:\n%s", got)
 				}
+
 				return
 			}
-			
+
 			// Check if all expected operations are present
 			for _, want := range tt.want {
 				if !strings.Contains(got, want) {

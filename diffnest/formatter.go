@@ -2,6 +2,7 @@ package diffnest
 
 import (
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -12,7 +13,7 @@ const (
 
 // Formatter interface for different output formats.
 type Formatter interface {
-	Format(results []*DiffResult) string
+	Format(w io.Writer, results []*DiffResult) error
 }
 
 // UnifiedFormatter implements unified diff format.
@@ -22,24 +23,26 @@ type UnifiedFormatter struct {
 }
 
 // Format formats diff results.
-func (f *UnifiedFormatter) Format(results []*DiffResult) string {
-	var builder strings.Builder
-
+func (f *UnifiedFormatter) Format(w io.Writer, results []*DiffResult) error {
 	for i, result := range results {
 		if i > 0 {
-			builder.WriteString("---\n")
+			if _, err := fmt.Fprint(w, "---\n"); err != nil {
+				return fmt.Errorf("write separator: %w", err)
+			}
 		}
 
-		f.formatDiff(&builder, result, "")
+		if err := f.formatDiff(w, result, ""); err != nil {
+			return err
+		}
 	}
 
-	return builder.String()
+	return nil
 }
 
-func (f *UnifiedFormatter) formatDiff(builder *strings.Builder, diff *DiffResult, indent string) {
+func (f *UnifiedFormatter) formatDiff(w io.Writer, diff *DiffResult, indent string) error {
 	// Skip unchanged items if ShowOnlyDiff is true
 	if f.ShowOnlyDiff && diff.Status == StatusSame {
-		return
+		return nil
 	}
 
 	pathStr := strings.Join(diff.Path, ".")
@@ -52,11 +55,15 @@ func (f *UnifiedFormatter) formatDiff(builder *strings.Builder, diff *DiffResult
 		if len(diff.Children) > 0 {
 			// Show children for containers
 			for _, child := range diff.Children {
-				f.formatDiff(builder, child, indent)
+				if err := f.formatDiff(w, child, indent); err != nil {
+					return err
+				}
 			}
 		} else {
 			// Show value for primitives
-			builder.WriteString(fmt.Sprintf("  %s%s: %s\n", indent, pathStr, f.formatValue(diff.From)))
+			if _, err := fmt.Fprintf(w, "  %s%s: %s\n", indent, pathStr, f.formatValue(diff.From)); err != nil {
+				return fmt.Errorf("write same value: %w", err)
+			}
 		}
 
 	case StatusModified:
@@ -65,95 +72,105 @@ func (f *UnifiedFormatter) formatDiff(builder *strings.Builder, diff *DiffResult
 			if diff.From != nil && diff.From.Type == TypeString && diff.To != nil && diff.To.Type == TypeString {
 				// Multiline string with line-by-line diff
 				if !f.ShowOnlyDiff {
-					builder.WriteString(fmt.Sprintf("  %s%s:\n", indent, pathStr))
+					if _, err := fmt.Fprintf(w, "  %s%s:\n", indent, pathStr); err != nil {
+						return fmt.Errorf("write multiline header: %w", err)
+					}
 				}
 				for _, child := range diff.Children {
 					if !f.ShowOnlyDiff || child.Status != StatusSame {
-						f.formatLineDiff(builder, child, indent+"  ")
+						if err := f.formatLineDiff(w, child, indent+"  "); err != nil {
+							return err
+						}
 					}
 				}
 			} else {
 				// Show children for containers
 				for _, child := range diff.Children {
-					f.formatDiff(builder, child, indent)
+					if err := f.formatDiff(w, child, indent); err != nil {
+						return err
+					}
 				}
 			}
 		} else {
 			// Show old and new values
-			builder.WriteString(fmt.Sprintf("- %s%s: %s\n", indent, pathStr, f.formatValue(diff.From)))
-			builder.WriteString(fmt.Sprintf("+ %s%s: %s\n", indent, pathStr, f.formatValue(diff.To)))
+			if _, err := fmt.Fprintf(w, "- %s%s: %s\n", indent, pathStr, f.formatValue(diff.From)); err != nil {
+				return fmt.Errorf("write deleted value: %w", err)
+			}
+			if _, err := fmt.Fprintf(w, "+ %s%s: %s\n", indent, pathStr, f.formatValue(diff.To)); err != nil {
+				return fmt.Errorf("write added value: %w", err)
+			}
 		}
 
 	case StatusDeleted:
-		f.formatDeleted(builder, diff, indent)
+		if err := f.formatDeleted(w, diff, indent); err != nil {
+			return err
+		}
 
 	case StatusAdded:
-		f.formatAdded(builder, diff, indent)
+		if err := f.formatAdded(w, diff, indent); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
-func (f *UnifiedFormatter) formatDeleted(builder *strings.Builder, diff *DiffResult, indent string) {
-	pathStr := strings.Join(diff.Path, ".")
+func (f *UnifiedFormatter) formatDeleted(w io.Writer, diff *DiffResult, indent string) error {
+	return f.formatAddedOrDeleted(w, diff.From, diff.Path, indent, "- ")
+}
+
+func (f *UnifiedFormatter) formatAdded(w io.Writer, diff *DiffResult, indent string) error {
+	return f.formatAddedOrDeleted(w, diff.To, diff.Path, indent, "+ ")
+}
+
+func (f *UnifiedFormatter) formatAddedOrDeleted(w io.Writer, data *StructuredData, path []string, indent, prefix string) error {
+	pathStr := strings.Join(path, ".")
 	if pathStr != "" {
 		pathStr = " " + pathStr
 	}
 
-	if diff.From == nil {
-		builder.WriteString(fmt.Sprintf("- %s%s\n", indent, pathStr))
+	if data == nil {
+		if _, err := fmt.Fprintf(w, "%s%s%s\n", prefix, indent, pathStr); err != nil {
+			return fmt.Errorf("write path: %w", err)
+		}
 
-		return
+		return nil
 	}
 
-	switch diff.From.Type {
-	case TypeObject:
-		builder.WriteString(fmt.Sprintf("- %s%s:\n", indent, pathStr))
-		f.formatStructure(builder, diff.From, indent+"  ", "- ")
-
-	case TypeArray:
-		builder.WriteString(fmt.Sprintf("- %s%s:\n", indent, pathStr))
-		f.formatStructure(builder, diff.From, indent+"  ", "- ")
+	switch data.Type {
+	case TypeObject, TypeArray:
+		if _, err := fmt.Fprintf(w, "%s%s%s:\n", prefix, indent, pathStr); err != nil {
+			return fmt.Errorf("write structure header: %w", err)
+		}
+		if err := f.formatStructure(w, data, indent+"  ", prefix); err != nil {
+			return err
+		}
 
 	default:
-		builder.WriteString(fmt.Sprintf("- %s%s: %s\n", indent, pathStr, f.formatValue(diff.From)))
+		if _, err := fmt.Fprintf(w, "%s%s%s: %s\n", prefix, indent, pathStr, f.formatValue(data)); err != nil {
+			return fmt.Errorf("write value: %w", err)
+		}
 	}
+
+	return nil
 }
 
-func (f *UnifiedFormatter) formatAdded(builder *strings.Builder, diff *DiffResult, indent string) {
-	pathStr := strings.Join(diff.Path, ".")
-	if pathStr != "" {
-		pathStr = " " + pathStr
-	}
-
-	if diff.To == nil {
-		builder.WriteString(fmt.Sprintf("+ %s%s\n", indent, pathStr))
-
-		return
-	}
-
-	switch diff.To.Type {
-	case TypeObject:
-		builder.WriteString(fmt.Sprintf("+ %s%s:\n", indent, pathStr))
-		f.formatStructure(builder, diff.To, indent+"  ", "+ ")
-
-	case TypeArray:
-		builder.WriteString(fmt.Sprintf("+ %s%s:\n", indent, pathStr))
-		f.formatStructure(builder, diff.To, indent+"  ", "+ ")
-
-	default:
-		builder.WriteString(fmt.Sprintf("+ %s%s: %s\n", indent, pathStr, f.formatValue(diff.To)))
-	}
-}
-
-func (f *UnifiedFormatter) formatStructure(builder *strings.Builder, data *StructuredData, indent, prefix string) {
+func (f *UnifiedFormatter) formatStructure(w io.Writer, data *StructuredData, indent, prefix string) error {
 	switch data.Type {
 	case TypeObject:
 		for key, child := range data.Children {
 			switch child.Type {
 			case TypeObject, TypeArray:
-				builder.WriteString(fmt.Sprintf("%s%s%s:\n", prefix, indent, key))
-				f.formatStructure(builder, child, indent+"  ", prefix)
+				if _, err := fmt.Fprintf(w, "%s%s%s:\n", prefix, indent, key); err != nil {
+					return fmt.Errorf("write object key: %w", err)
+				}
+				if err := f.formatStructure(w, child, indent+"  ", prefix); err != nil {
+					return err
+				}
 			default:
-				builder.WriteString(fmt.Sprintf("%s%s%s: %s\n", prefix, indent, key, f.formatValue(child)))
+				if _, err := fmt.Fprintf(w, "%s%s%s: %s\n", prefix, indent, key, f.formatValue(child)); err != nil {
+					return fmt.Errorf("write object field: %w", err)
+				}
 			}
 		}
 
@@ -161,13 +178,21 @@ func (f *UnifiedFormatter) formatStructure(builder *strings.Builder, data *Struc
 		for i, elem := range data.Elements {
 			switch elem.Type {
 			case TypeObject, TypeArray:
-				builder.WriteString(fmt.Sprintf("%s%s[%d]:\n", prefix, indent, i))
-				f.formatStructure(builder, elem, indent+"  ", prefix)
+				if _, err := fmt.Fprintf(w, "%s%s[%d]:\n", prefix, indent, i); err != nil {
+					return fmt.Errorf("write array index: %w", err)
+				}
+				if err := f.formatStructure(w, elem, indent+"  ", prefix); err != nil {
+					return err
+				}
 			default:
-				builder.WriteString(fmt.Sprintf("%s%s[%d]: %s\n", prefix, indent, i, f.formatValue(elem)))
+				if _, err := fmt.Fprintf(w, "%s%s[%d]: %s\n", prefix, indent, i, f.formatValue(elem)); err != nil {
+					return fmt.Errorf("write array element: %w", err)
+				}
 			}
 		}
 	}
+
+	return nil
 }
 
 func (f *UnifiedFormatter) formatValue(data *StructuredData) string {
@@ -197,36 +222,48 @@ func (f *UnifiedFormatter) formatValue(data *StructuredData) string {
 	return "?"
 }
 
-// formatLineDiff formats a single line difference in a multiline string
-func (f *UnifiedFormatter) formatLineDiff(builder *strings.Builder, diff *DiffResult, indent string) {
+// formatLineDiff formats a single line difference in a multiline string.
+func (f *UnifiedFormatter) formatLineDiff(w io.Writer, diff *DiffResult, indent string) error {
 	switch diff.Status {
 	case StatusSame:
 		if diff.From != nil {
-			builder.WriteString(fmt.Sprintf("   %s%s\n", indent, diff.From.Value))
+			if _, err := fmt.Fprintf(w, "   %s%s\n", indent, diff.From.Value); err != nil {
+				return fmt.Errorf("write same line: %w", err)
+			}
 		}
 	case StatusDeleted:
 		if diff.From != nil {
-			builder.WriteString(fmt.Sprintf("-  %s%s\n", indent, diff.From.Value))
+			if _, err := fmt.Fprintf(w, "-  %s%s\n", indent, diff.From.Value); err != nil {
+				return fmt.Errorf("write deleted line: %w", err)
+			}
 		}
 	case StatusAdded:
 		if diff.To != nil {
-			builder.WriteString(fmt.Sprintf("+  %s%s\n", indent, diff.To.Value))
+			if _, err := fmt.Fprintf(w, "+  %s%s\n", indent, diff.To.Value); err != nil {
+				return fmt.Errorf("write added line: %w", err)
+			}
 		}
 	case StatusModified:
 		if diff.From != nil {
-			builder.WriteString(fmt.Sprintf("-  %s%s\n", indent, diff.From.Value))
+			if _, err := fmt.Fprintf(w, "-  %s%s\n", indent, diff.From.Value); err != nil {
+				return fmt.Errorf("write modified old line: %w", err)
+			}
 		}
 		if diff.To != nil {
-			builder.WriteString(fmt.Sprintf("+  %s%s\n", indent, diff.To.Value))
+			if _, err := fmt.Fprintf(w, "+  %s%s\n", indent, diff.To.Value); err != nil {
+				return fmt.Errorf("write modified new line: %w", err)
+			}
 		}
 	}
+
+	return nil
 }
 
 // JSONPatchFormatter implements RFC 6902 JSON Patch format.
 type JSONPatchFormatter struct{}
 
 // Format formats diff results as JSON Patch.
-func (f *JSONPatchFormatter) Format(results []*DiffResult) string {
+func (f *JSONPatchFormatter) Format(w io.Writer, results []*DiffResult) error {
 	var operations []string
 
 	for _, result := range results {
@@ -235,10 +272,18 @@ func (f *JSONPatchFormatter) Format(results []*DiffResult) string {
 	}
 
 	if len(operations) == 0 {
-		return "[]\n"
+		if _, err := fmt.Fprint(w, "[]\n"); err != nil {
+			return fmt.Errorf("write empty patch: %w", err)
+		}
+
+		return nil
 	}
 
-	return fmt.Sprintf("[\n  %s\n]\n", strings.Join(operations, ",\n  "))
+	if _, err := fmt.Fprintf(w, "[\n  %s\n]\n", strings.Join(operations, ",\n  ")); err != nil {
+		return fmt.Errorf("write patch array: %w", err)
+	}
+
+	return nil
 }
 
 func (f *JSONPatchFormatter) generateOperations(diff *DiffResult) []string {

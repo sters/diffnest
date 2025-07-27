@@ -1,0 +1,18 @@
+{
+  "server": {
+    "port": 8080,
+    "host": "localhost",
+    "ssl": false
+  },
+  "database": {
+    "type": "postgres",
+    "host": "localhost",
+    "port": 5432,
+    "name": "myapp"
+  },
+  "features": {
+    "auth": true,
+    "api": true,
+    "webhooks": false
+  }
+}

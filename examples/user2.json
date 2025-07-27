@@ -1,0 +1,13 @@
+{
+  "id": 123,
+  "name": "John Doe",
+  "email": "user@newdomain.com",
+  "phone": "+1-234-567-8900",
+  "active": true,
+  "roles": ["admin", "user", "moderator"],
+  "settings": {
+    "theme": "light",
+    "notifications": true,
+    "language": "en"
+  }
+}

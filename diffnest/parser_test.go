@@ -64,7 +64,6 @@ func TestDetectFormatFromFilename(t *testing.T) {
 	}
 }
 
-
 func TestJSONParser_Parse(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -169,6 +168,7 @@ func TestJSONParser_Parse(t *testing.T) {
 			got, err := parser.Parse(strings.NewReader(tt.input))
 			if (err != nil) != tt.wantErr {
 				t.Errorf("JSONParser.Parse() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 			if !tt.wantErr && !equalStructuredDataSlice(got, tt.want) {
@@ -259,6 +259,7 @@ doc: 2`,
 			got, err := parser.Parse(strings.NewReader(tt.input))
 			if (err != nil) != tt.wantErr {
 				t.Errorf("YAMLParser.Parse() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 			if !tt.wantErr {
@@ -308,7 +309,7 @@ func TestYAMLParser_MultilineStringFormats(t *testing.T) {
   baz
   special
     multiline`,
-			yaml2: `value: "foo\nbar\nbaz\nspecial\n  multiline"`,
+			yaml2:  `value: "foo\nbar\nbaz\nspecial\n  multiline"`,
 			expect: "same",
 		},
 		{
@@ -342,7 +343,7 @@ special\n\
   and multiple
     indented
       lines`,
-			yaml2: `description: "This is a \"test\" string\nwith 'quotes' and special chars: !@#$%\nand multiple\n  indented\n    lines"`,
+			yaml2:  `description: "This is a \"test\" string\nwith 'quotes' and special chars: !@#$%\nand multiple\n  indented\n    lines"`,
 			expect: "same",
 		},
 	}
@@ -355,21 +356,21 @@ special\n\
 			if err1 != nil {
 				t.Fatalf("Failed to parse yaml1: %v", err1)
 			}
-			
+
 			docs2, err2 := parser.Parse(strings.NewReader(tt.yaml2))
 			if err2 != nil {
 				t.Fatalf("Failed to parse yaml2: %v", err2)
 			}
-			
+
 			// Both should parse to single documents
 			if len(docs1) != 1 || len(docs2) != 1 {
 				t.Fatalf("Expected single document, got %d and %d", len(docs1), len(docs2))
 			}
-			
+
 			// Compare the parsed values
 			engine := &DiffEngine{options: DiffOptions{}}
 			result := engine.Compare(docs1[0], docs2[0])
-			
+
 			if tt.expect == "same" && result.Status != StatusSame {
 				// Log the actual values for debugging
 				if docs1[0].Type == TypeObject && docs2[0].Type == TypeObject {
@@ -439,6 +440,7 @@ func TestParseWithFormat(t *testing.T) {
 			got, err := ParseWithFormat(strings.NewReader(tt.content), tt.format)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseWithFormat() error = %v, wantErr %v", err, tt.wantErr)
+
 				return
 			}
 			if !tt.wantErr && len(got) != tt.wantLen {
@@ -448,8 +450,7 @@ func TestParseWithFormat(t *testing.T) {
 	}
 }
 
-
-// Helper function to compare StructuredData slices
+// Helper function to compare StructuredData slices.
 func equalStructuredDataSlice(a, b []*StructuredData) bool {
 	if len(a) != len(b) {
 		return false
@@ -459,10 +460,11 @@ func equalStructuredDataSlice(a, b []*StructuredData) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
-// Helper function to compare StructuredData
+// Helper function to compare StructuredData.
 func equalStructuredData(a, b *StructuredData) bool {
 	if a == nil && b == nil {
 		return true
@@ -473,7 +475,7 @@ func equalStructuredData(a, b *StructuredData) bool {
 	if a.Type != b.Type {
 		return false
 	}
-	
+
 	// Handle integer/float comparison for numbers
 	if a.Type == TypeNumber && b.Type == TypeNumber {
 		// Convert both to float64 for comparison
@@ -485,7 +487,7 @@ func equalStructuredData(a, b *StructuredData) bool {
 	} else if !reflect.DeepEqual(a.Value, b.Value) {
 		return false
 	}
-	
+
 	// Compare Children
 	if len(a.Children) != len(b.Children) {
 		return false
@@ -495,7 +497,7 @@ func equalStructuredData(a, b *StructuredData) bool {
 			return false
 		}
 	}
-	
+
 	// Compare Elements
 	if len(a.Elements) != len(b.Elements) {
 		return false
@@ -505,18 +507,17 @@ func equalStructuredData(a, b *StructuredData) bool {
 			return false
 		}
 	}
-	
-	// Note: We intentionally don't compare Meta field as it contains pointers
-	// and format-specific information that might differ between instances
-	
+
+	// Meta field contains format-specific information that might differ between instances
+
 	return true
 }
-
 
 func getKeys(m map[string]*StructuredData) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
+
 	return keys
 }

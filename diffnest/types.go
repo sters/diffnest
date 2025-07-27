@@ -23,10 +23,10 @@ type StructuredData struct {
 
 // Metadata contains format-specific information.
 type Metadata struct {
-	Format       string        // "json", "yaml", "toml"
-	Location     *Location     // Position in source file
-	Comments     []string      // Comments (YAML/TOML)
-	StringStyle  StringStyle   // Style of string representation (for YAML)
+	Format      string      // "json", "yaml", "toml"
+	Location    *Location   // Position in source file
+	Comments    []string    // Comments (YAML/TOML)
+	StringStyle StringStyle // Style of string representation (for YAML)
 }
 
 // StringStyle represents YAML string representation style.
