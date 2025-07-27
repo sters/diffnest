@@ -1,8 +1,10 @@
-module github.com/sters/go-project-boilerplate
+module github.com/sters/diffnest
 
 go 1.24
 
 tool github.com/golangci/golangci-lint/cmd/golangci-lint
+
+require github.com/goccy/go-yaml v1.15.13
 
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect
