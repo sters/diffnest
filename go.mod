@@ -4,7 +4,7 @@ go 1.24
 
 tool github.com/golangci/golangci-lint/cmd/golangci-lint
 
-require github.com/goccy/go-yaml v1.18.0
+require github.com/goccy/go-yaml v1.19.0
 
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect
