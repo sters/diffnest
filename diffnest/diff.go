@@ -616,7 +616,7 @@ func (e *DiffEngine) calculateSize(data *StructuredData) int {
 	return 1
 }
 
-// Compare compares multiple documents and finds optimal pairings.
+// Compare compares multiple documents and finds optimal pairings using the Hungarian algorithm.
 func Compare(docsA, docsB []*StructuredData, options DiffOptions) []*DiffResult {
 	engine := NewDiffEngine(options)
 
@@ -625,88 +625,303 @@ func Compare(docsA, docsB []*StructuredData, options DiffOptions) []*DiffResult 
 		return []*DiffResult{engine.Compare(docsA[0], docsB[0])}
 	}
 
-	// Find optimal pairings for multiple documents
-	type pairing struct {
-		indexA int
-		indexB int
-		diff   *DiffResult
-		cost   int
+	// Build cost matrix for Hungarian algorithm
+	// We need to handle the case where documents can be unmatched (deleted or added)
+	// Matrix size: (len(docsA) + len(docsB)) x (len(docsA) + len(docsB))
+	// This allows each doc from A to match with a doc from B, or be "deleted"
+	// and each doc from B to be "added" if not matched
+	n := len(docsA) + len(docsB)
+	if n == 0 {
+		return []*DiffResult{}
 	}
 
-	pairings := make([]pairing, 0, len(docsA)*len(docsB)+len(docsA)+len(docsB))
+	// Pre-compute all diff results and costs
+	// diffResults[i][j] = diff between docsA[i] and docsB[j]
+	diffResults := make([][]*DiffResult, len(docsA))
+	costMatrix := make([][]int, n)
 
-	// Compare all pairs
+	for i := range n {
+		costMatrix[i] = make([]int, n)
+	}
+
+	// Compute costs for matching docsA[i] with docsB[j]
 	for i, docA := range docsA {
+		diffResults[i] = make([]*DiffResult, len(docsB))
 		for j, docB := range docsB {
 			diff := engine.Compare(docA, docB)
+			diffResults[i][j] = diff
 			cost := 0
 			if diff.Meta != nil {
 				cost = diff.Meta.DiffCount
 			}
-			pairings = append(pairings, pairing{
-				indexA: i,
-				indexB: j,
-				diff:   diff,
-				cost:   cost,
-			})
+			// Add penalty for mismatched Kubernetes-like resources
+			// This considers apiVersion, kind, metadata.name, and metadata.namespace
+			cost += calculateResourceMismatchPenalty(docA, docB)
+			costMatrix[i][j] = cost
 		}
 	}
 
-	// Add pairings with nil
-	for i := range docsA {
-		diff := engine.Compare(docsA[i], nil)
-		cost := 0
+	// Compute costs for "deleting" docsA[i] (matching with dummy)
+	deleteCosts := make([]int, len(docsA))
+	deleteDiffs := make([]*DiffResult, len(docsA))
+	for i, docA := range docsA {
+		diff := engine.Compare(docA, nil)
+		deleteDiffs[i] = diff
 		if diff.Meta != nil {
-			cost = diff.Meta.DiffCount
+			deleteCosts[i] = diff.Meta.DiffCount
 		}
-		pairings = append(pairings, pairing{
-			indexA: i,
-			indexB: -1,
-			diff:   diff,
-			cost:   cost,
-		})
 	}
 
-	for j := range docsB {
-		diff := engine.Compare(nil, docsB[j])
-		cost := 0
+	// Compute costs for "adding" docsB[j] (matching with dummy)
+	addCosts := make([]int, len(docsB))
+	addDiffs := make([]*DiffResult, len(docsB))
+	for j, docB := range docsB {
+		diff := engine.Compare(nil, docB)
+		addDiffs[j] = diff
 		if diff.Meta != nil {
-			cost = diff.Meta.DiffCount
+			addCosts[j] = diff.Meta.DiffCount
 		}
-		pairings = append(pairings, pairing{
-			indexA: -1,
-			indexB: j,
-			diff:   diff,
-			cost:   cost,
-		})
 	}
 
-	// Sort by cost
-	sort.Slice(pairings, func(i, j int) bool {
-		return pairings[i].cost < pairings[j].cost
-	})
+	// Fill cost matrix
+	// Upper-left quadrant is already filled above with kind penalty
 
-	// Find optimal matching
-	usedA := make(map[int]bool)
-	usedB := make(map[int]bool)
+	// Upper-right quadrant: docsA[i] matched with dummy (deletion)
+	// docsA[i] can be deleted by matching with dummy slot len(docsB)+i
+	for i := range len(docsA) {
+		for j := len(docsB); j < n; j++ {
+			if j-len(docsB) == i {
+				costMatrix[i][j] = deleteCosts[i]
+			} else {
+				costMatrix[i][j] = 1 << 30 // Large cost to prevent invalid matching
+			}
+		}
+	}
+
+	// Lower-left quadrant: dummy matched with docsB[j] (addition)
+	// docsB[j] can be added by matching with dummy slot len(docsA)+j
+	for i := len(docsA); i < n; i++ {
+		for j := range len(docsB) {
+			if i-len(docsA) == j {
+				costMatrix[i][j] = addCosts[j]
+			} else {
+				costMatrix[i][j] = 1 << 30 // Large cost to prevent invalid matching
+			}
+		}
+	}
+
+	// Lower-right quadrant: dummy matched with dummy (zero cost)
+	for i := len(docsA); i < n; i++ {
+		for j := len(docsB); j < n; j++ {
+			costMatrix[i][j] = 0
+		}
+	}
+
+	// Run Hungarian algorithm
+	assignment := hungarianAlgorithm(costMatrix)
+
+	// Build results from assignment
 	var results []*DiffResult
 
-	for _, p := range pairings {
-		aUsed := p.indexA >= 0 && usedA[p.indexA]
-		bUsed := p.indexB >= 0 && usedB[p.indexB]
+	for i := range len(docsA) {
+		j := assignment[i]
+		if j < len(docsB) {
+			// docsA[i] matched with docsB[j]
+			results = append(results, diffResults[i][j])
+		} else {
+			// docsA[i] was deleted
+			results = append(results, deleteDiffs[i])
+		}
+	}
 
-		if !aUsed && !bUsed {
-			if p.indexA >= 0 {
-				usedA[p.indexA] = true
-			}
-			if p.indexB >= 0 {
-				usedB[p.indexB] = true
-			}
-			results = append(results, p.diff)
+	// Check for additions (docsB that weren't matched with any docsA)
+	matchedB := make(map[int]bool)
+	for i := range len(docsA) {
+		j := assignment[i]
+		if j < len(docsB) {
+			matchedB[j] = true
+		}
+	}
+
+	for j := range len(docsB) {
+		if !matchedB[j] {
+			results = append(results, addDiffs[j])
 		}
 	}
 
 	return results
+}
+
+// hungarianAlgorithm implements the Hungarian algorithm for optimal assignment.
+// Returns an assignment where assignment[i] is the column assigned to row i.
+func hungarianAlgorithm(costMatrix [][]int) []int {
+	n := len(costMatrix)
+	if n == 0 {
+		return []int{}
+	}
+
+	// Copy matrix to avoid modifying original
+	cost := make([][]int, n)
+	for i := range n {
+		cost[i] = make([]int, n)
+		copy(cost[i], costMatrix[i])
+	}
+
+	// u[i] = potential for row i, v[j] = potential for column j
+	u := make([]int, n+1)
+	v := make([]int, n+1)
+	// p[j] = row assigned to column j (0 means unassigned, using 1-indexed internally)
+	p := make([]int, n+1)
+	// way[j] = previous column in augmenting path
+	way := make([]int, n+1)
+
+	for i := 1; i <= n; i++ {
+		// Start augmenting path from row i
+		p[0] = i
+		j0 := 0 // Current column (0 is a virtual column)
+
+		minv := make([]int, n+1)
+		used := make([]bool, n+1)
+		for j := range n + 1 {
+			minv[j] = 1 << 30
+			used[j] = false
+		}
+
+		// Find augmenting path
+		for p[j0] != 0 {
+			used[j0] = true
+			i0 := p[j0]
+			delta := 1 << 30
+			j1 := 0
+
+			for j := 1; j <= n; j++ {
+				if !used[j] {
+					// Calculate reduced cost
+					cur := cost[i0-1][j-1] - u[i0] - v[j]
+					if cur < minv[j] {
+						minv[j] = cur
+						way[j] = j0
+					}
+					if minv[j] < delta {
+						delta = minv[j]
+						j1 = j
+					}
+				}
+			}
+
+			// Update potentials
+			for j := range n + 1 {
+				if used[j] {
+					u[p[j]] += delta
+					v[j] -= delta
+				} else {
+					minv[j] -= delta
+				}
+			}
+
+			j0 = j1
+		}
+
+		// Reconstruct assignment along augmenting path
+		for j0 != 0 {
+			j1 := way[j0]
+			p[j0] = p[j1]
+			j0 = j1
+		}
+	}
+
+	// Build result (convert from 1-indexed to 0-indexed)
+	assignment := make([]int, n)
+	for j := 1; j <= n; j++ {
+		if p[j] != 0 {
+			assignment[p[j]-1] = j - 1
+		}
+	}
+
+	return assignment
+}
+
+// calculateResourceMismatchPenalty calculates penalty for mismatched Kubernetes-like resources.
+// It checks apiVersion, kind, metadata.name, and metadata.namespace.
+// Returns 0 if all fields match, or a penalty value based on which fields differ.
+func calculateResourceMismatchPenalty(a, b *StructuredData) int {
+	if a == nil || b == nil {
+		return 0
+	}
+	if a.Type != TypeObject || b.Type != TypeObject {
+		return 0 // Not objects, no penalty
+	}
+
+	// Check if these look like Kubernetes resources (have kind field)
+	_, hasKindA := a.Children["kind"]
+	_, hasKindB := b.Children["kind"]
+	if !hasKindA && !hasKindB {
+		return 0 // Neither has kind, not K8s resources
+	}
+
+	penalty := 0
+
+	// Check kind match (highest penalty - different resource types should never match)
+	// This is the most important factor: we almost never want to match different kinds
+	if !fieldValuesMatch(a, b, "kind") {
+		penalty += 1 << 20 // Very high penalty for kind mismatch
+	}
+
+	// Check apiVersion match
+	// Different apiVersions usually mean different resource versions
+	if !fieldValuesMatch(a, b, "apiVersion") {
+		penalty += 50 // Small penalty for apiVersion mismatch
+	}
+
+	// Check metadata.name match
+	// Name differences should add a small penalty to prefer same-name matches
+	// but not so large that it prevents matching different-named resources of the same kind
+	if !metadataFieldValuesMatch(a, b, "name") {
+		penalty += 10 // Very small penalty for name mismatch
+	}
+
+	// Check metadata.namespace match
+	if !metadataFieldValuesMatch(a, b, "namespace") {
+		penalty += 5 // Minimal penalty for namespace mismatch
+	}
+
+	return penalty
+}
+
+// fieldValuesMatch checks if a top-level field has the same value in both documents.
+func fieldValuesMatch(a, b *StructuredData, fieldName string) bool {
+	fieldA, hasA := a.Children[fieldName]
+	fieldB, hasB := b.Children[fieldName]
+
+	if !hasA && !hasB {
+		return true // Neither has the field
+	}
+	if !hasA || !hasB {
+		return false // Only one has the field
+	}
+	if fieldA.Type != fieldB.Type {
+		return false
+	}
+
+	return fieldA.Value == fieldB.Value
+}
+
+// metadataFieldValuesMatch checks if a field under metadata has the same value in both documents.
+func metadataFieldValuesMatch(a, b *StructuredData, fieldName string) bool {
+	metaA, hasMetaA := a.Children["metadata"]
+	metaB, hasMetaB := b.Children["metadata"]
+
+	if !hasMetaA && !hasMetaB {
+		return true // Neither has metadata
+	}
+	if !hasMetaA || !hasMetaB {
+		return false // Only one has metadata
+	}
+	if metaA.Type != TypeObject || metaB.Type != TypeObject {
+		return false
+	}
+
+	return fieldValuesMatch(metaA, metaB, fieldName)
 }
 
 // shouldDoLineDiff determines if we should do line-by-line diff for multiline strings.
