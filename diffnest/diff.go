@@ -688,7 +688,7 @@ func Compare(docsA, docsB []*StructuredData, options DiffOptions) []*DiffResult 
 
 	// Upper-right quadrant: docsA[i] matched with dummy (deletion)
 	// docsA[i] can be deleted by matching with dummy slot len(docsB)+i
-	for i := range len(docsA) {
+	for i := range docsA {
 		for j := len(docsB); j < n; j++ {
 			if j-len(docsB) == i {
 				costMatrix[i][j] = deleteCosts[i]
@@ -701,7 +701,7 @@ func Compare(docsA, docsB []*StructuredData, options DiffOptions) []*DiffResult 
 	// Lower-left quadrant: dummy matched with docsB[j] (addition)
 	// docsB[j] can be added by matching with dummy slot len(docsA)+j
 	for i := len(docsA); i < n; i++ {
-		for j := range len(docsB) {
+		for j := range docsB {
 			if i-len(docsA) == j {
 				costMatrix[i][j] = addCosts[j]
 			} else {
@@ -723,7 +723,7 @@ func Compare(docsA, docsB []*StructuredData, options DiffOptions) []*DiffResult 
 	// Build results from assignment
 	var results []*DiffResult
 
-	for i := range len(docsA) {
+	for i := range docsA {
 		j := assignment[i]
 		if j < len(docsB) {
 			// docsA[i] matched with docsB[j]
@@ -736,14 +736,14 @@ func Compare(docsA, docsB []*StructuredData, options DiffOptions) []*DiffResult 
 
 	// Check for additions (docsB that weren't matched with any docsA)
 	matchedB := make(map[int]bool)
-	for i := range len(docsA) {
+	for i := range docsA {
 		j := assignment[i]
 		if j < len(docsB) {
 			matchedB[j] = true
 		}
 	}
 
-	for j := range len(docsB) {
+	for j := range docsB {
 		if !matchedB[j] {
 			results = append(results, addDiffs[j])
 		}
