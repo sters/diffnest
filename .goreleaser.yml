@@ -14,3 +14,7 @@ builds:
   main: ./main.go
   ldflags:
     - -s -w -X github.com/sters/diffnest/diffnest.Version={{.Version}}
+
+archives:
+- name_template: >-
+    {{ .ProjectName }}_{{ .Version }}_{{ .Os }}-{{ if eq .Arch "arm64" }}aarch64{{ else if eq .Arch "386" }}i386{{ else }}{{ .Arch }}{{ end }}
