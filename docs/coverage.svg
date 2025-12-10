@@ -9,7 +9,7 @@
     </clipPath>
     <g clip-path="url(#r)">
         <rect width="83.5" height="20" fill="#24292E"/>
-        <rect x="83.5" width="50" height="20" fill="#97CA00"/>
+        <rect x="83.5" width="50" height="20" fill="#A4A61D"/>
         <rect width="133.5" height="20" fill="url(#s)"/>
     </g>
     <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
@@ -18,7 +18,7 @@
         
         <text aria-hidden="true" x="495" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)">coverage</text>
         <text x="495" y="140" transform="scale(.1)" fill="#fff">coverage</text>
-        <text aria-hidden="true" x="1085" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)">82.0%</text>
-        <text x="1085" y="140" transform="scale(.1)" fill="#fff">82.0%</text>
+        <text aria-hidden="true" x="1085" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)">79.0%</text>
+        <text x="1085" y="140" transform="scale(.1)" fill="#fff">79.0%</text>
     </g>
 </svg>
