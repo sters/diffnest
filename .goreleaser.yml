@@ -11,6 +11,7 @@ builds:
     - 386
     - amd64
     - arm64
+    - aarch64
   main: ./main.go
   ldflags:
     - -s -w -X github.com/sters/diffnest/diffnest.Version={{.Version}}
