@@ -11,7 +11,7 @@ A powerful cross-format diff tool that compares JSON, YAML, and other structured
 ## Features
 
 - **Cross-format comparison**: Compare files in different formats (JSON vs YAML)
-- **Multiple document support**: Handle multiple documents in a single file
+- **Multiple document support**: Handle multiple documents in a single file with optimal pairing using the Hungarian algorithm
 - **Smart array comparison**: Compare arrays by index or by value matching
 - **Multiple output formats**: Unified diff (default) or JSON Patch (RFC 6902)
 - **Detailed multiline string diffs**: Line-by-line comparison for multiline strings
@@ -155,6 +155,18 @@ doc1: value1
 ---
 doc2: value2
 ```
+
+#### Optimal Document Pairing with Hungarian Algorithm
+
+When comparing files with multiple documents, diffnest uses the **Hungarian algorithm** to find the optimal pairing between documents. This ensures that similar documents are matched together, minimizing the total differences reported.
+
+For Kubernetes-like resources, diffnest applies additional matching heuristics based on:
+- `kind` (highest priority - different kinds are strongly discouraged from matching)
+- `apiVersion`
+- `metadata.name`
+- `metadata.namespace`
+
+This means when comparing two Kubernetes manifest files, a `Deployment` named "app" will preferentially match with another `Deployment` named "app", even if the documents appear in different orders in each file.
 
 ### Smart Array Comparison
 
