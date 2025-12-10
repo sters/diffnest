@@ -32,6 +32,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	if cmd.ShowVersion {
+		fmt.Fprintf(stdout, "diffnest version %s\n", diffnest.Version)
+
+		return 0
+	}
+
 	reader1, err := openFile(cmd.File1)
 	if err != nil {
 		fmt.Fprintf(stderr, "Error opening first file: %v\n", err)

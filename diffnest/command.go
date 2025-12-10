@@ -14,6 +14,11 @@ var (
 	ErrIncompatibleOptions = errors.New("--show-all and -C options are incompatible: context lines are only meaningful when showing only differences")
 )
 
+// Version information (set via ldflags during build).
+var (
+	Version = "dev"
+)
+
 // Command represents the CLI command configuration.
 type Command struct {
 	// Flags
@@ -28,6 +33,7 @@ type Command struct {
 	Format2          string
 	Verbose          bool
 	Help             bool
+	ShowVersion      bool
 	ContextLines     int
 
 	// Arguments
@@ -59,6 +65,7 @@ func NewCommand(name string, errorHandling flag.ErrorHandling) *Command {
 	cmd.flags.StringVar(&cmd.Format2, "format2", "", "Format for second file: 'json', 'yaml', or auto-detect from filename")
 	cmd.flags.BoolVar(&cmd.Verbose, "v", false, "Verbose output")
 	cmd.flags.BoolVar(&cmd.Help, "h", false, "Show help")
+	cmd.flags.BoolVar(&cmd.ShowVersion, "version", false, "Show version information")
 	cmd.flags.IntVar(&cmd.ContextLines, "C", 3, "Number of context lines to show (only for unified format)")
 
 	return cmd
@@ -84,7 +91,7 @@ func (c *Command) Parse(args []string) error {
 		return fmt.Errorf("parse flags: %w", err)
 	}
 
-	if c.flags.NArg() != 2 && !c.Help {
+	if c.flags.NArg() != 2 && !c.Help && !c.ShowVersion {
 		return fmt.Errorf("%w, got %d", ErrInvalidArgs, c.flags.NArg())
 	}
 
