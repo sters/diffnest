@@ -15,9 +15,9 @@ var (
 )
 
 // Version information (set via ldflags during build).
-var (
-	Version = "dev"
-)
+//
+//nolint:gochecknoglobals
+var Version = "dev"
 
 // Command represents the CLI command configuration.
 type Command struct {
