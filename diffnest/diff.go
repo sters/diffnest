@@ -899,24 +899,6 @@ func fieldValuesMatch(a, b *StructuredData, fieldName string) bool {
 	return fieldA.Value == fieldB.Value
 }
 
-// metadataFieldValuesMatch checks if a field under metadata has the same value in both documents.
-func metadataFieldValuesMatch(a, b *StructuredData, fieldName string) bool {
-	metaA, hasMetaA := a.Children["metadata"]
-	metaB, hasMetaB := b.Children["metadata"]
-
-	if !hasMetaA && !hasMetaB {
-		return true // Neither has metadata
-	}
-	if !hasMetaA || !hasMetaB {
-		return false // Only one has metadata
-	}
-	if metaA.Type != TypeObject || metaB.Type != TypeObject {
-		return false
-	}
-
-	return fieldValuesMatch(metaA, metaB, fieldName)
-}
-
 // shouldDoLineDiff determines if we should do line-by-line diff for multiline strings.
 func (e *DiffEngine) shouldDoLineDiff(a, b *StructuredData) bool {
 	// Both must be strings
