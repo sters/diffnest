@@ -163,10 +163,8 @@ When comparing files with multiple documents, diffnest uses the **Hungarian algo
 For Kubernetes-like resources, diffnest applies additional matching heuristics based on:
 - `kind` (highest priority - different kinds are strongly discouraged from matching)
 - `apiVersion`
-- `metadata.name`
-- `metadata.namespace`
 
-This means when comparing two Kubernetes manifest files, a `Deployment` named "app" will preferentially match with another `Deployment` named "app", even if the documents appear in different orders in each file.
+This means when comparing two Kubernetes manifest files, resources of the same `kind` will be matched based on content similarity. If a resource is renamed (e.g., `metadata.name` changed), it will be shown as "modified" rather than "deleted + added", making it easier to see what actually changed.
 
 ### Smart Array Comparison
 

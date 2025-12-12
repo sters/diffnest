@@ -873,17 +873,10 @@ func calculateResourceMismatchPenalty(a, b *StructuredData) int {
 		penalty += 50 // Small penalty for apiVersion mismatch
 	}
 
-	// Check metadata.name match
-	// Name differences should add a small penalty to prefer same-name matches
-	// but not so large that it prevents matching different-named resources of the same kind
-	if !metadataFieldValuesMatch(a, b, "name") {
-		penalty += 10 // Very small penalty for name mismatch
-	}
-
-	// Check metadata.namespace match
-	if !metadataFieldValuesMatch(a, b, "namespace") {
-		penalty += 5 // Minimal penalty for namespace mismatch
-	}
+	// Note: metadata.name and metadata.namespace are intentionally NOT penalized.
+	// This allows resources with renamed names to be matched based on content similarity,
+	// showing them as "modified" rather than "deleted + added".
+	// The kind match (with very high penalty) is sufficient to prevent cross-kind matching.
 
 	return penalty
 }
